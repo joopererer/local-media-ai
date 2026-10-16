@@ -1,0 +1,18 @@
+[package]
+name = "video_frames"
+version.workspace = true
+edition.workspace = true
+description = "App-agnostic video keyframe extraction via external ffmpeg."
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+
+[features]
+serde = ["dep:serde"]
+
+[dev-dependencies]
+serde_json.workspace = true
