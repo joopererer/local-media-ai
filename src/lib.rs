@@ -14,5 +14,6 @@
 
 pub mod embeddinggemma;
 pub mod image_prep;
+pub mod worker_frame;
 
 pub use embeddinggemma::*;
