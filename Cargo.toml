@@ -1,0 +1,11 @@
+[package]
+name = "ocr_core"
+version.workspace = true
+edition.workspace = true
+description = "App-agnostic OCR (image -> text + line boxes). Engine-replaceable."
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+thiserror.workspace = true
