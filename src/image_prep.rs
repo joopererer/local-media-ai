@@ -43,6 +43,46 @@ pub struct ImageInputs {
     pub resized: (u32, u32),
 }
 
+/// 后端边界：按预算缩放后的 RGB 图（27.2b 架构：缩放/切块/位置是共享组件）。
+///
+/// 27.2a 决定性实验证明：图片向量的运行库间残差全部来自预处理。
+/// 因此所有后端（ORT、llama.cpp、未来 GPU）都从这个类型开始计算：
+/// 后端只做"本类型 → 视觉特征 → 句子向量"，缩放/切块/position/input_ids
+/// 由本模块的纯函数产出，不随后端分叉。
+#[derive(Debug, Clone)]
+pub struct SharedPixels {
+    /// 按预算缩放后的 RGB 像素，行优先，(h, w, 3)，uint8。
+    pub rgb: Vec<u8>,
+    /// 行优先尺寸 (高, 宽)，均为 48 的倍数（见 [`aspect_ratio_preserving_size`]）。
+    pub size_hw: (u32, u32),
+    /// soft token 上限（决定预算；实际值见 [`Self::patchify`] 结果）。
+    pub max_soft_tokens: u32,
+}
+
+impl SharedPixels {
+    /// 切块 → (ImageInputs)。唯一的切块实现：所有后端的
+    /// "RGB 像素 → 视觉特征"输入都由此产出（含 ONNX 的 pixel_values /
+    /// position_ids / input_ids；给 llama.cpp 的路径见 [`SharedPixels::to_png`]）。
+    pub fn patchify(&self) -> Result<ImageInputs, EmbedError> {
+        patchify_pixels(&self.rgb, self.size_hw.0, self.size_hw.1, self.max_soft_tokens)
+    }
+    /// 兼容旧名（历史上返回 Result）。
+    pub fn patchify_result(&self) -> Result<ImageInputs, EmbedError> {
+        self.patchify()
+    }
+
+    /// 导出为 PNG（供走"先缩放 PNG 再解码"路径的后端恒等测试，如 27.2a 的 llama.cpp 对照）。
+    pub fn to_png(&self) -> Result<Vec<u8>, EmbedError> {
+        let (th, tw) = self.size_hw;
+        let img = image::RgbImage::from_raw(tw, th, self.rgb.clone())
+            .ok_or_else(|| bad("SharedPixels 尺寸与像素长度不一致"))?;
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::Png)
+            .map_err(|e| bad(format!("PNG 编码失败: {e}")))?;
+        Ok(buf.into_inner())
+    }
+}
+
 fn bad(msg: impl Into<String>) -> EmbedError {
     EmbedError::InvalidImage(msg.into())
 }
@@ -183,29 +223,38 @@ fn resize_bicubic_aa(src: &[u8], w: usize, h: usize, tw: usize, th: usize) -> Ve
 }
 
 /// 完整预处理：缩放 → 缩放到 [0,1] → 切补丁 → 位置 id → 补齐 → input_ids。
+///
+/// 27.2b：本体已拆为 [`shared_pixels_from_image`]（缩放，后端边界）+
+/// [`patchify_pixels`]（切块/位置/token，纯函数）。保留本函数为两者的组合，
+/// 语义与拆分前逐字节相同（由 `shared_pixels_patchify_matches_prepare_image` 测试与
+/// 27.1A 一致性工具保证）。
 pub fn prepare_image(img: &RgbImage, max_soft_tokens: u32) -> Result<ImageInputs, EmbedError> {
+    shared_pixels_from_image(img, max_soft_tokens)?.patchify()
+}
+
+/// 切块：已缩放的 RGB 像素 → (pixel_values / position_ids / input_ids)。
+/// 纯函数（不读盘、不缩放），是所有后端共用的唯一切块实现。
+pub fn patchify_pixels(
+    pixels: &[u8],
+    th: u32,
+    tw: u32,
+    max_soft_tokens: u32,
+) -> Result<ImageInputs, EmbedError> {
     if !SUPPORTED_SOFT_TOKENS.contains(&max_soft_tokens) {
         return Err(bad(format!(
             "max_soft_tokens 必须是 {SUPPORTED_SOFT_TOKENS:?} 之一"
         )));
     }
     let max_patches = (max_soft_tokens * POOLING_KERNEL * POOLING_KERNEL) as usize;
-    let (h, w) = (img.height(), img.width());
-    let (th, tw) = aspect_ratio_preserving_size(h, w, max_patches as u32)?;
-
-    let resized: Vec<u8>;
-    let pixels: &[u8] = if th == h && tw == w {
-        img.as_raw()
-    } else {
-        resized = resize_bicubic_aa(
-            img.as_raw(),
-            w as usize,
-            h as usize,
-            tw as usize,
-            th as usize,
-        );
-        &resized
-    };
+    if th == 0 || tw == 0 || !th.is_multiple_of(PATCH_SIZE) || !tw.is_multiple_of(PATCH_SIZE) {
+        return Err(bad(format!("切块尺寸非法: {th}x{tw}")));
+    }
+    if pixels.len() != (th as usize) * (tw as usize) * 3 {
+        return Err(bad(format!(
+            "像素长度与尺寸不一致: {} vs {th}x{tw}",
+            pixels.len()
+        )));
+    }
 
     let ph = (th / PATCH_SIZE) as usize;
     let pw = (tw / PATCH_SIZE) as usize;
@@ -363,7 +412,41 @@ pub fn load_rgb_image(path: &Path, skip_sniff: bool) -> Result<RgbImage, EmbedEr
 
 /// 读取图片文件并预处理。
 pub fn prepare_image_file(path: &Path, max_soft_tokens: u32, skip_sniff: bool) -> Result<ImageInputs, EmbedError> {
-    prepare_image(&load_rgb_image(path, skip_sniff)?, max_soft_tokens)
+    shared_pixels_file(path, max_soft_tokens, skip_sniff)?.patchify_result()
+}
+
+/// 缩放为共享像素（后端边界）。唯一的缩放实现：所有后端的图片输入都由此产出。
+pub fn shared_pixels_from_image(
+    img: &RgbImage,
+    max_soft_tokens: u32,
+) -> Result<SharedPixels, EmbedError> {
+    if !SUPPORTED_SOFT_TOKENS.contains(&max_soft_tokens) {
+        return Err(bad(format!(
+            "max_soft_tokens 必须是 {SUPPORTED_SOFT_TOKENS:?} 之一"
+        )));
+    }
+    let max_patches = (max_soft_tokens * POOLING_KERNEL * POOLING_KERNEL) as usize;
+    let (h, w) = (img.height(), img.width());
+    let (th, tw) = aspect_ratio_preserving_size(h, w, max_patches as u32)?;
+    let rgb: Vec<u8> = if th == h && tw == w {
+        img.as_raw().clone()
+    } else {
+        resize_bicubic_aa(img.as_raw(), w as usize, h as usize, tw as usize, th as usize)
+    };
+    Ok(SharedPixels {
+        rgb,
+        size_hw: (th, tw),
+        max_soft_tokens,
+    })
+}
+
+/// 读取图片文件并缩放为共享像素（含 EXIF 方向与格式嗅探，见 [`load_rgb_image`]）。
+pub fn shared_pixels_file(
+    path: &Path,
+    max_soft_tokens: u32,
+    skip_sniff: bool,
+) -> Result<SharedPixels, EmbedError> {
+    shared_pixels_from_image(&load_rgb_image(path, skip_sniff)?, max_soft_tokens)
 }
 #[cfg(test)]
 mod tests {
@@ -475,5 +558,27 @@ mod tests {
             prepare_image(&img, 100),
             Err(EmbedError::InvalidImage(_))
         ));
+    }
+
+    /// 27.2b：拆分后 `shared_pixels_from_image + patchify` 必须与旧路径 `prepare_image`
+    /// 逐元素相同（后端共用的边界不改变结果）。
+    #[test]
+    fn shared_pixels_patchify_matches_prepare_image() {
+        // 非整除尺寸：必走缩放分支，覆盖 bicubic-AA 路径。
+        let mut img = RgbImage::new(1000, 701);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            p.0 = [(x % 251) as u8, (y % 241) as u8, ((x * 3 + y) % 233) as u8];
+        }
+        let old = prepare_image(&img, 140).unwrap();
+        let sp = shared_pixels_from_image(&img, 140).unwrap();
+        assert_eq!(sp.size_hw, old.resized, "缩放尺寸必须一致");
+        assert_eq!(sp.rgb.len(), old.resized.0 as usize * old.resized.1 as usize * 3);
+        let new = sp.patchify().unwrap();
+        assert_eq!(new.soft_tokens, old.soft_tokens);
+        assert_eq!(new.max_patches, old.max_patches);
+        assert_eq!(new.resized, old.resized);
+        assert_eq!(new.input_ids, old.input_ids);
+        assert_eq!(new.position_ids, old.position_ids);
+        assert_eq!(new.pixel_values, old.pixel_values);
     }
 }
