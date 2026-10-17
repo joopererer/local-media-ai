@@ -237,8 +237,8 @@ pub fn read_response(r: &mut impl Read) -> Result<Response, FrameError> {
     }
     let dim = u32::from_le_bytes(body[9..13].try_into().unwrap()) as usize;
     let floats = &body[13..];
-    // hello 响应：payload 为 JSON（dim = JSON 字节数，后跟 8 字节占位）。
-    if floats.len() == dim + 8 {
+    // hello 响应：payload 为 JSON（dim = JSON 字节数；可选后跟 8 字节占位）。
+    if floats.len() == dim || floats.len() == dim + 8 {
         let json = String::from_utf8_lossy(&floats[..dim]).into_owned();
         return Ok((req_id, Err(json)));
     }

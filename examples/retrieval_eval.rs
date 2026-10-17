@@ -9,10 +9,14 @@
 //     --pub_dir <eval/public/images> --queries eval/queries.jsonl --expected eval/expected.jsonl
 //     --sim eval/similar.jsonl [--priv_dir D:/test/images --priv_manifest eval/private/manifest.jsonl]
 //     --threads 4 --soft_tokens 140 --top_k 10 [--history_dir eval/history]
+//     [--backend ort-cpu|llama-worker --worker_exe <exe> --model_gguf <gguf> --mmproj_gguf <mmproj>]
 //
 // 输出 JSON + 人读摘要（文字搜图 / 以图搜图 × 公开 / 私密 四块）。
 
+use embed_core::worker_frame::{read_response, write_request, Request};
 use embed_core::{init_ort, Embedder};
+use std::io::{BufReader, BufWriter};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -20,6 +24,134 @@ fn arg(args: &[String], name: &str) -> Option<String> {
     args.iter()
         .position(|a| a == name)
         .and_then(|i| args.get(i + 1).cloned())
+}
+
+/// 评测用嵌入后端（27.5：同一查询/期望/库，可切 ORT 或 llama worker）。
+enum Backend {
+    Ort(Box<Embedder>),
+    Worker(Box<WorkerClient>),
+}
+
+impl Backend {
+    fn tag(&self) -> &'static str {
+        match self {
+            Backend::Ort(_) => "ort-cpu",
+            Backend::Worker(_) => "llama-worker",
+        }
+    }
+
+    fn embed_text(&mut self, text: &str) -> Vec<f32> {
+        match self {
+            Backend::Ort(e) => e.embed(text, "").expect("文本嵌入失败"),
+            Backend::Worker(w) => w.embed_text(text).expect("worker 文本嵌入失败"),
+        }
+    }
+
+    /// 图片向量：ORT 走文件路径；worker 走"文件 → SharedPixels → stdio 帧"（不走 PNG）。
+    fn embed_image_file(&mut self, path: &std::path::Path, soft: u32) -> Result<Vec<f32>, String> {
+        match self {
+            Backend::Ort(e) => Ok(e.embed_image_file(path, soft, false).map_err(|e| e.to_string())?.vector),
+            Backend::Worker(w) => w.embed_image_file(path, soft),
+        }
+    }
+}
+
+/// llama worker 客户端（评测用，复用 stdio 帧协议）。
+struct WorkerClient {
+    child: Child,
+    stdin: BufWriter<ChildStdin>,
+    stdout: BufReader<ChildStdout>,
+    req_seq: u64,
+    runtime: String,
+}
+
+impl WorkerClient {
+    fn spawn(exe: &str, model: &str, mmproj: &str) -> Self {
+        let mut child = Command::new(exe)
+            .arg("--model")
+            .arg(model)
+            .arg("--mmproj")
+            .arg(mmproj)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("worker 启动失败");
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut c = Self {
+            child,
+            stdin: BufWriter::new(stdin),
+            stdout: BufReader::new(stdout),
+            req_seq: 1,
+            runtime: String::new(),
+        };
+        let hello = c.call(&Request::Hello).expect("worker hello 失败");
+        let v: serde_json::Value = serde_json::from_slice(&hello).expect("hello 非 JSON");
+        let vulkan = v.get("vulkan").and_then(|x| x.as_bool()).unwrap_or(false);
+        c.runtime = format!("llama-cpp-b11669-{}", if vulkan { "vulkan" } else { "cpu" });
+        eprintln!("[worker] runtime={}", c.runtime);
+        c
+    }
+
+    fn call(&mut self, req: &Request) -> Result<Vec<u8>, String> {
+        let id = self.req_seq;
+        self.req_seq += 1;
+        write_request(&mut self.stdin, id, req, 64 * 1024 * 1024).map_err(|e| e.to_string())?;
+        loop {
+            if let Ok(Some(st)) = self.child.try_wait() {
+                return Err(format!("worker 退出 {st:?}"));
+            }
+            use std::io::BufRead;
+            match self.stdout.fill_buf() {
+                Ok(b) if !b.is_empty() => break,
+                Ok(_) => std::thread::sleep(std::time::Duration::from_millis(10)),
+                Err(e) => return Err(format!("worker 输出中断: {e}")),
+            }
+        }
+        let (rid, res) = read_response(&mut self.stdout).map_err(|e| e.to_string())?;
+        if rid != id {
+            return Err(format!("响应错位 {rid} != {id}"));
+        }
+        match res {
+            Ok((v, _ms)) => {
+                let mut bytes = Vec::with_capacity(v.len() * 4);
+                for x in v {
+                    bytes.extend_from_slice(&x.to_le_bytes());
+                }
+                Ok(bytes)
+            }
+            Err(text) => Ok(text.into_bytes()),
+        }
+    }
+
+    fn embed_text(&mut self, text: &str) -> Result<Vec<f32>, String> {
+        let raw = self.call(&Request::Text(text.to_string()))?;
+        decode_vec(&raw)
+    }
+
+    fn embed_image_file(&mut self, path: &std::path::Path, soft: u32) -> Result<Vec<f32>, String> {
+        let sp = embed_core::image_prep::shared_pixels_file(path, soft, false)
+            .map_err(|e| e.to_string())?;
+        let (h, w) = sp.size_hw;
+        let raw = self.call(&Request::Image {
+            h,
+            w,
+            soft,
+            rgb: sp.rgb,
+        })?;
+        decode_vec(&raw)
+    }
+}
+
+fn decode_vec(raw: &[u8]) -> Result<Vec<f32>, String> {
+    if !raw.len().is_multiple_of(4) {
+        return Err("向量字节数不是 4 的倍数".to_string());
+    }
+    Ok(raw
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 fn cos(a: &[f32], b: &[f32]) -> f32 {
@@ -79,7 +211,7 @@ fn rank_of(order: &[String], want: &str) -> Option<usize> {
 /// 文字搜图：在库 `lib`（文件名→向量）中检索查询，统计期望命中的 Recall@K 与首位命中。
 /// 返回 (per_query 明细, recall@K, 首位命中率)。
 fn eval_text_queries(
-    embedder: &Embedder,
+    backend: &mut Backend,
     queries: &[Query],
     expects: &HashMap<String, Expect>,
     lib: &HashMap<String, Vec<f32>>,
@@ -104,10 +236,10 @@ fn eval_text_queries(
             if text.trim().is_empty() {
                 continue;
             }
-            let qv = embedder.embed(text, "").expect("查询嵌入失败");
+            let qv = backend.embed_text(text);
             let mut scored: Vec<(&String, f32)> =
                 order.iter().map(|f| (*f, cos(&qv, &lib[*f]))).collect();
-            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            scored.sort_by(|a, b| b.1.total_cmp(&a.1));
             let ranked: Vec<String> = scored.iter().map(|(f, _)| (*f).clone()).collect();
             let want: HashSet<&str> = exp.hit.iter().map(String::as_str).collect();
             let top: HashSet<&str> =
@@ -156,7 +288,7 @@ fn eval_image_queries(
                 .filter(|(f, _)| *f != *q && !exclude_from_lib.contains(*f))
                 .map(|(f, v)| (f, cos(qv, v)))
                 .collect();
-            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            scored.sort_by(|a, b| b.1.total_cmp(&a.1));
             let ranked: Vec<&String> = scored.iter().map(|(f, _)| *f).collect();
             let want: HashSet<&String> =
                 members.iter().filter(|m| m.as_str() != q.as_str()).copied().collect();
@@ -191,7 +323,7 @@ fn eval_image_queries(
 }
 
 fn embed_dir(
-    embedder: &Embedder,
+    backend: &mut Backend,
     dir: &std::path::Path,
     files: &[String],
     soft: u32,
@@ -199,10 +331,9 @@ fn embed_dir(
 ) -> HashMap<String, Vec<f32>> {
     let mut lib = HashMap::new();
     for (i, f) in files.iter().enumerate() {
-        let out = embedder.embed_image_file(&dir.join(f), soft, false);
-        match out {
-            Ok(e) => {
-                lib.insert(f.clone(), e.vector);
+        match backend.embed_image_file(&dir.join(f), soft) {
+            Ok(v) => {
+                lib.insert(f.clone(), v);
             }
             Err(e) => eprintln!("{tag} 跳过 {f}: {e}"),
         }
@@ -222,8 +353,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let history_dir = need("--history_dir");
     let snapshot = arg(&args, "--snapshot").unwrap_or_default();
 
-    init_ort(&PathBuf::from(need("--ort_lib")))?;
-    let embedder = Embedder::new(&PathBuf::from(need("--model_dir")), threads)?;
+    let backend_name = arg(&args, "--backend").unwrap_or_else(|| "ort-cpu".to_string());
+    let mut backend = if backend_name == "llama-worker" {
+        Backend::Worker(Box::new(WorkerClient::spawn(
+            &need("--worker_exe"),
+            &need("--model_gguf"),
+            &need("--mmproj_gguf"),
+        )))
+    } else {
+        init_ort(&PathBuf::from(need("--ort_lib")))?;
+        Backend::Ort(Box::new(Embedder::new(
+            &PathBuf::from(need("--model_dir")),
+            threads,
+        )?))
+    };
 
     // --- 库：公开集（入库图片全量）+ 私密集（manifest 清单）
     let pub_dir = PathBuf::from(need("--pub_dir"));
@@ -234,7 +377,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|f| f.ends_with(".jpg") || f.ends_with(".png"))
         .collect();
     pub_files.sort();
-    let pub_lib = embed_dir(&embedder, &pub_dir, &pub_files, soft, "公开");
+    let pub_lib = embed_dir(&mut backend, &pub_dir, &pub_files, soft, "公开");
 
     let mut priv_lib = HashMap::new();
     if let Some(p) = arg(&args, "--priv_manifest") {
@@ -248,7 +391,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .collect();
         let priv_dir = PathBuf::from(need("--priv_dir"));
-        priv_lib = embed_dir(&embedder, &priv_dir, &priv_manifest, soft, "私密");
+        priv_lib = embed_dir(&mut backend, &priv_dir, &priv_manifest, soft, "私密");
     }
 
     // --- 查询与期望（公开集 golden）
@@ -287,14 +430,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let priv_excluded = HashSet::new();
 
     let (pub_text_rows, pub_text_recall, pub_text_first) =
-        eval_text_queries(&embedder, &queries, &expects, &pub_lib, top_k);
+        eval_text_queries(&mut backend, &queries, &expects, &pub_lib, top_k);
     let (pub_img_rows, pub_img_recall, _) =
         eval_image_queries(&pub_lib, &sim, top_k, &pub_excluded);
 
     let priv_block = if !priv_lib.is_empty() {
         // 私密文字搜图：私密查询在私密库中检索（同库口径）；私密查询无结果则跳过该块。
         let (t_rows, t_recall, t_first) =
-            eval_text_queries(&embedder, &priv_queries, &priv_expects, &priv_lib, top_k);
+            eval_text_queries(&mut backend, &priv_queries, &priv_expects, &priv_lib, top_k);
         // 私密以图搜图组是难负样本：不计 recall，只报误命中率（组员互进 top-K 的查询占比）。
         let (i_rows, i_recall, i_fp) =
             eval_image_queries(&priv_lib, &priv_sim, top_k, &priv_excluded);
@@ -308,7 +451,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let report = serde_json::json!({
-        "backend": "ort-cpu", "threads": threads, "soft_tokens": soft, "top_k": top_k,
+        "backend": backend.tag(), "threads": threads, "soft_tokens": soft, "top_k": top_k,
         "public": {
             "n_images": pub_lib.len(),
             "text2image": {"recall": pub_text_recall, "first_hit_rate": pub_text_first, "queries": pub_text_rows},
