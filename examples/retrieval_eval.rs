@@ -413,16 +413,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let priv_sim: Vec<SimGroup> = arg(&args, "--priv_sim").map_or(Vec::new(), |p| read_jsonl(&p));
     let priv_queries: Vec<Query> =
         arg(&args, "--priv_queries").map_or(Vec::new(), |p| read_jsonl(&p));
-    // 私密文字搜图期望：每条私密查询命中其 images 清单（人审标注）。
+    // 私密文字搜图期望：优先用人工标注（labels.json 经 apply_priv_labels.py 写回 expected）。
     let priv_expects: HashMap<String, Expect> = priv_queries
         .iter()
         .map(|q| {
+            let hit = if q.expected.is_empty() {
+                q.images.clone()
+            } else {
+                q.expected.clone()
+            };
             (
                 q.id.clone(),
                 Expect {
                     query_id: q.id.clone(),
                     lang: "both".to_string(),
-                    hit: q.images.clone(),
+                    hit,
                 },
             )
         })
