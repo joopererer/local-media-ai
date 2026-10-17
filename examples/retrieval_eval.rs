@@ -59,6 +59,9 @@ struct SimGroup {
     kind: String,
     files: Vec<String>,
     excluded: Option<Vec<String>>,
+    /// 难负样本组：不计 recall，单独报告误命中率（组员互进 top-K 的比例）。
+    #[serde(default)]
+    hard_negative: bool,
 }
 
 fn read_jsonl<T: serde::de::DeserializeOwned>(path: &str) -> Vec<T> {
@@ -129,13 +132,16 @@ fn eval_text_queries(
 }
 
 /// 以图搜图：组内每张作查询，在库中检索其余组员，统计"组员进入 top-K"的 Recall@K。
+/// 难负样本组（hard_negative，期望组员互不相关）：不计 recall，
+/// 返回误命中率 = 组员出现在彼此 top-K 的查询占比（越低越好），明细照常记录。
 fn eval_image_queries(
     lib: &HashMap<String, Vec<f32>>,
     groups: &[SimGroup],
     top_k: usize,
     exclude_from_lib: &HashSet<String>,
-) -> (Vec<serde_json::Value>, f64) {
+) -> (Vec<serde_json::Value>, f64, Option<f64>) {
     let (mut hit_sum, mut hit_n) = (0usize, 0usize);
+    let (mut fp_q, mut fp_n) = (0usize, 0usize);
     let mut rows = Vec::new();
     for g in groups {
         let members: Vec<&String> =
@@ -157,21 +163,31 @@ fn eval_image_queries(
             let top: HashSet<&String> =
                 ranked.iter().take(top_k).cloned().collect();
             let hits = want.intersection(&top).count();
-            hit_sum += hits;
-            hit_n += want.len();
+            if g.hard_negative {
+                // 难负样本：组员本不应互相关；记录"误命中"（有组员进入 top-K 的查询占比）。
+                fp_n += 1;
+                if hits > 0 {
+                    fp_q += 1;
+                }
+            } else {
+                hit_sum += hits;
+                hit_n += want.len();
+            }
             let first_rank = want
                 .iter()
                 .filter_map(|w| ranked.iter().position(|f| f == w).map(|i| i + 1))
                 .min();
             rows.push(serde_json::json!({
                 "group": g.id, "query": q, "kind": g.kind,
+                "hard_negative": g.hard_negative,
                 "nmembers": want.len(), "recall": hits, "first_rank": first_rank,
                 "top": ranked.iter().take(top_k).collect::<Vec<_>>(),
             }));
         }
     }
     let recall = if hit_n > 0 { hit_sum as f64 / hit_n as f64 } else { 1.0 };
-    (rows, recall)
+    let fp_rate = if fp_n > 0 { Some(fp_q as f64 / fp_n as f64) } else { None };
+    (rows, recall, fp_rate)
 }
 
 fn embed_dir(
@@ -272,19 +288,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (pub_text_rows, pub_text_recall, pub_text_first) =
         eval_text_queries(&embedder, &queries, &expects, &pub_lib, top_k);
-    let (pub_img_rows, pub_img_recall) =
+    let (pub_img_rows, pub_img_recall, _) =
         eval_image_queries(&pub_lib, &sim, top_k, &pub_excluded);
 
     let priv_block = if !priv_lib.is_empty() {
         // 私密文字搜图：私密查询在私密库中检索（同库口径）；私密查询无结果则跳过该块。
         let (t_rows, t_recall, t_first) =
             eval_text_queries(&embedder, &priv_queries, &priv_expects, &priv_lib, top_k);
-        let (i_rows, i_recall) =
+        // 私密以图搜图组是难负样本：不计 recall，只报误命中率（组员互进 top-K 的查询占比）。
+        let (i_rows, i_recall, i_fp) =
             eval_image_queries(&priv_lib, &priv_sim, top_k, &priv_excluded);
         Some(serde_json::json!({
             "n_images": priv_lib.len(),
             "text2image": {"recall": t_recall, "first_hit_rate": t_first, "queries": t_rows},
-            "image2image": {"recall": i_recall, "groups": i_rows},
+            "image2image": {"recall": i_recall, "false_hit_rate": i_fp, "groups": i_rows},
         }))
     } else {
         None
@@ -332,9 +349,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("== 以图搜图 recall@{top_k} ==");
     println!("   公开: recall={:.4} ({} 组内查询)", pub_img_recall, pub_img_rows.len());
     if let Some(p) = &priv_block {
+        // 私密组是难负样本：报误命中率（组员互进 top-K 的查询占比，越低越好），不计 recall。
+        let fp = p["image2image"]["false_hit_rate"].as_f64();
         println!(
-            "   私密: recall={:.4} ({} 组内查询)",
-            p["image2image"]["recall"].as_f64().unwrap(),
+            "   私密（难负样本）: 误命中率={} ({} 组内查询)",
+            fp.map_or("n/a".to_string(), |v| format!("{v:.4}")),
             p["image2image"].as_object().unwrap()["groups"].as_array().unwrap().len()
         );
     }
