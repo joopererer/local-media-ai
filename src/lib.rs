@@ -8,6 +8,8 @@
 //! 本阶段（27.0）仅提供接口与占位实现：调用 [`OcrEngine::recognize_file`] 的实现前，
 //! 先用 [`UnavailableEngine`] 表示"该平台/引擎未启用"，避免任何伪造的识别结果。
 
+pub mod paddle;
+
 use std::path::Path;
 
 /// 一行识别结果。
@@ -68,6 +70,75 @@ impl OcrEngine for UnavailableEngine {
 
     fn recognize_file(&self, _path: &Path) -> Result<OcrResult, OcrError> {
         Err(OcrError::Unavailable(self.reason.clone()))
+    }
+}
+
+
+/// PaddleOCR（PP-OCRv5 mobile，ONNX）作为 [`OcrEngine`] 的实现：输入图片文件。
+/// 调用前须已初始化 ORT 运行库（与嵌入共用 `embed_core::init_ort`）。
+pub struct PaddleEngine {
+    inner: paddle::PaddleOcr,
+}
+
+impl PaddleEngine {
+    pub fn load(model_dir: &Path, threads: usize) -> Result<Self, OcrError> {
+        Ok(Self {
+            inner: paddle::PaddleOcr::load(model_dir, threads, "paddleocr-v5-mobile")?,
+        })
+    }
+
+    /// 模型版本标识（写入存储的 engine 列，如 `paddleocr-v5-mobile`）。
+    pub fn model_tag(&self) -> &str {
+        &self.inner.model_tag
+    }
+
+    /// 识别图片文件（image crate 解码 → RGB 像素 → 三段管线）。
+    /// 返回结果与阶段耗时 (det_ms, cls_ms, rec_ms)。
+    pub fn recognize_file_with_timing(
+        &self,
+        path: &Path,
+    ) -> Result<(OcrResult, f64, f64, f64), OcrError> {
+        if !path.is_file() {
+            return Err(OcrError::NotFound(path.display().to_string()));
+        }
+        let img = image::open(path).map_err(|e| OcrError::Decode(e.to_string()))?;
+        let rgb = img.to_rgb8();
+        let (w, h) = rgb.dimensions();
+        let (lines, det_ms, cls_ms, rec_ms) =
+            self.inner.recognize_rgb(w, h, rgb.as_raw())?;
+        let ocr_lines: Vec<OcrLine> = lines
+            .into_iter()
+            .map(|l| OcrLine {
+                text: l.text,
+                bbox: l.bbox,
+                confidence: l.score,
+            })
+            .collect();
+        let text = ocr_lines
+            .iter()
+            .map(|l| l.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Ok((
+            OcrResult {
+                text,
+                lines: ocr_lines,
+                engine: self.inner.model_tag.clone(),
+            },
+            det_ms,
+            cls_ms,
+            rec_ms,
+        ))
+    }
+}
+
+impl OcrEngine for PaddleEngine {
+    fn engine_id(&self) -> &'static str {
+        "paddleocr-onnx"
+    }
+
+    fn recognize_file(&self, path: &Path) -> Result<OcrResult, OcrError> {
+        self.recognize_file_with_timing(path).map(|(r, _, _, _)| r)
     }
 }
 
