@@ -52,6 +52,14 @@ pub const LLAMA_PROCESS_ENCODE: c_int = 0;
 #[link(name = "ggml")]
 unsafe extern "C" {
     pub fn llama_backend_init();
+
+    /// b11669 起 ggml 后端以动态模块分发（`ggml-cpu-*.dll` / `ggml-vulkan.dll`），
+    /// 必须显式加载否则模型加载报 "no backends are loaded"。
+    pub fn ggml_backend_load_all();
+    /// 从指定目录加载全部后端（打包布局：`<app>/llama/`）。
+    pub fn ggml_backend_load_all_from_path(dir_path: *const c_char);
+    /// 已注册后端数量（日志用）。
+    pub fn ggml_backend_reg_count() -> usize;
     pub fn llama_model_default_params() -> LlamaModelParams;
     pub fn llama_model_load_from_file(
         path: *const c_char,

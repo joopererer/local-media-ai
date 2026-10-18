@@ -30,6 +30,36 @@ fn cstring(s: &str) -> Result<CString, String> {
     CString::new(s).map_err(|_| format!("路径含 NUL 字节: {s}"))
 }
 
+/// b11669 的 ggml 后端是动态模块（ggml-cpu-*.dll / ggml-vulkan.dll）：
+/// 先试 `<worker exe>/llama`（打包布局），再试 exe 同目录，最后交给
+/// `ggml_backend_load_all()` 的默认搜索（GGML_BACKEND_PATH 等）。
+fn load_ggml_backends() {
+    unsafe {
+        let mut loaded_from: Option<String> = None;
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                for cand in [dir.join("llama"), dir.to_path_buf()] {
+                    if cand.is_dir() {
+                        if let Ok(c) = CString::new(cand.to_string_lossy().as_bytes()) {
+                            ggml_backend_load_all_from_path(c.as_ptr());
+                        }
+                        loaded_from = Some(cand.display().to_string());
+                        break;
+                    }
+                }
+            }
+        }
+        if loaded_from.is_none() {
+            ggml_backend_load_all();
+        }
+        let n = ggml_backend_reg_count();
+        eprintln!(
+            "[worker] ggml backends loaded={n} from={}",
+            loaded_from.unwrap_or_else(|| "(default search)".to_string())
+        );
+    }
+}
+
 impl LlamaEmbedder {
     /// 加载模型与多模态上下文。`gpu_layers` 为 0 时纯 CPU（Vulkan 探测失败的回退）。
     pub fn load(
@@ -40,6 +70,7 @@ impl LlamaEmbedder {
     ) -> Result<Self, String> {
         unsafe {
             llama_backend_init();
+            load_ggml_backends();
             let mp = llama_model_default_params();
             // 只改本 worker 关心的字段，其余保持 C 默认值。
             let mut mp = mp;
