@@ -15,6 +15,10 @@
 //! 更早的版本必须写 `-vsync vfr`。策略见 [`FpsModePolicy`]：调用方按
 //! [`fps_mode_policy_for_version`] 传入已知版本；版本无法识别时用 [`FpsModePolicy::Auto`]
 //! （先试 `-fps_mode`，失败后回退 `-vsync` 重试一次）。
+//!
+//! **两种抽帧方式**（[`ExtractMethod`]）：帧率过滤（`-vf fps=…`）一次解码全片、精确但
+//! 长视频慢；跳转定位（`-ss` 放输入前、每个目标时刻一次调用）只解目标附近数据、快一个
+//! 量级。默认 [`ExtractMethod::Auto`]：时长 ≥ `seek_threshold_ms`（默认 60 秒）走跳转定位。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -93,6 +97,10 @@ pub struct ExtractOptions {
     pub max_edge: u32,
     /// 帧率直通参数写法（按 FFmpeg 版本；见 [`fps_mode_policy_for_version`]）。
     pub fps_mode: FpsModePolicy,
+    /// 抽帧方式（默认 Auto）。
+    pub method: ExtractMethod,
+    /// 自动选择"跳转定位"的时长阈值（毫秒，默认 60 秒）。
+    pub seek_threshold_ms: u64,
 }
 
 impl Default for ExtractOptions {
@@ -103,6 +111,8 @@ impl Default for ExtractOptions {
             duration_hint_ms: None,
             max_edge: 1024,
             fps_mode: FpsModePolicy::Auto,
+            method: ExtractMethod::Auto,
+            seek_threshold_ms: DEFAULT_SEEK_THRESHOLD_MS,
         }
     }
 }
@@ -121,6 +131,30 @@ pub struct SamplingPlan {
 /// 最小采样间隔，避免调用方传 0 造成 fps 爆炸。
 const MIN_EVERY_MS: u64 = 100;
 
+/// 抽帧方式。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtractMethod {
+    /// 帧率过滤：一次 ffmpeg 调用解码全片取帧。精确、可预期，**长片慢**。
+    Filter,
+    /// 跳转定位：每个目标时刻一次调用，`-ss` 放输入前，只解该时刻附近的数据。
+    Seek,
+    /// 自动：时长 ≥ `seek_threshold_ms` ⇒ Seek；否则（或时长未知）⇒ Filter。
+    Auto,
+}
+
+/// 跳转定位的默认时长阈值（毫秒）：超过即按"长视频"处理。
+///
+/// 取值依据（实测，见 `tests/ffmpeg_integration.rs`）：跳转定位每帧起一个 ffmpeg
+/// 进程（约 50ms 固定开销，24 帧 ≈ 1.2s），而帧率过滤要**解码全片**。
+/// - 易解码的合成素材（180s / 720p testsrc）：filter 1.39s vs seek 1.99s（过滤略胜）；
+/// - 真实 1080p 长片（单次全片解码 20s 以上）：seek 快一个量级。
+///
+/// 60s 让"超过一分钟"的视频走跳转定位；两者差距在短视频上本就在 1s 量级，代价可接受。
+pub const DEFAULT_SEEK_THRESHOLD_MS: u64 = 60_000;
+
+/// 跳转定位的落点精度门（毫秒）：实测偏差超过它就判定 ffmpeg 行为异常。
+pub const MAX_SEEK_DRIFT_MS: u64 = 500;
+
 /// 抽帧错误分类。
 #[derive(Debug, thiserror::Error)]
 pub enum VideoError {
@@ -132,6 +166,12 @@ pub enum VideoError {
     FfmpegFailed(String),
     #[error("抽帧未实现/该平台不支持: {0}")]
     Unavailable(String),
+    #[error("跳转定位落点偏差过大：请求 {requested_ms}ms，实测 {actual_ms:?}ms，偏差 {drift_ms}ms")]
+    BadSeek {
+        requested_ms: u64,
+        actual_ms: Option<u64>,
+        drift_ms: u64,
+    },
 }
 
 /// ffmpeg 进程输出（只关心成败与 stderr：帧时间戳从 `showinfo` 里解析）。
@@ -187,6 +227,8 @@ pub struct ExtractOutcome {
     pub truncated: usize,
     /// 本次实际生效的帧率直通写法（回退成功时为 `Vsync`，便于调用方缓存）。
     pub used_fps_mode: FpsModePolicy,
+    /// 本次实际使用的抽帧方式（Auto 解析后的结果）。
+    pub method: ExtractMethod,
 }
 
 /// 可注入执行器的抽帧实现（测试用）。
@@ -228,8 +270,44 @@ pub fn extract_frames_with(
     };
 
     let plan = plan_sampling(duration_ms, every_ms, options.max_frames);
+    let method = resolve_method(options.method, duration_ms, options.seek_threshold_ms);
+    let targets = target_times_ms(duration_ms, &plan);
+
+    let seek_applicable = method == ExtractMethod::Seek && !targets.is_empty();
+    let (mut frames, used, truncated) = if seek_applicable {
+        extract_by_seek(ffmpeg_bin, video, out_dir, options, &targets, runner)?
+    } else {
+        extract_by_filter(ffmpeg_bin, video, out_dir, &plan, options, runner)?
+    };
+
+    frames.sort_by_key(|f| f.t_ms);
+    frames.truncate(plan.max_frames as usize);
+
+    Ok(ExtractOutcome {
+        frames,
+        duration_ms,
+        truncated,
+        used_fps_mode: used,
+        method: if seek_applicable {
+            ExtractMethod::Seek
+        } else {
+            ExtractMethod::Filter
+        },
+    })
+}
+
+/// 帧率过滤抽帧（单次调用解码全片）。
+/// 返回（帧，实际生效的 [`FpsModePolicy`]，因上限被丢弃的帧数）。
+fn extract_by_filter(
+    ffmpeg_bin: &Path,
+    video: &Path,
+    out_dir: &Path,
+    plan: &SamplingPlan,
+    options: &ExtractOptions,
+    runner: &dyn ProcessRunner,
+) -> Result<(Vec<VideoFrame>, FpsModePolicy, usize), VideoError> {
     let mut used = options.fps_mode;
-    let args = build_args(video, out_dir, &plan, options, used);
+    let args = build_args(video, out_dir, plan, options, used);
     let mut out = runner.run(ffmpeg_bin, &args)?;
     if !out.success && used.allows_fallback() && plan.single_at_ms.is_none() {
         // 版本不可识别：先试了 `-fps_mode`，失败则用旧写法 `-vsync` 重试一次。
@@ -237,7 +315,7 @@ pub fn extract_frames_with(
         clean_stale_frames(out_dir)?;
         let first_err = out.stderr.clone();
         used = FpsModePolicy::Vsync;
-        let retry_args = build_args(video, out_dir, &plan, options, used);
+        let retry_args = build_args(video, out_dir, plan, options, used);
         out = runner.run(ffmpeg_bin, &retry_args)?;
         if !out.success {
             return Err(VideoError::FfmpegFailed(format!(
@@ -260,22 +338,146 @@ pub fn extract_frames_with(
         }
     }
 
-    let mut frames: Vec<VideoFrame> = produced
+    let frames: Vec<VideoFrame> = produced
         .into_iter()
         .enumerate()
         .map(|(i, image_path)| VideoFrame {
             image_path,
-            t_ms: frame_timestamp_ms(i, &plan, &pts_ms),
+            t_ms: frame_timestamp_ms(i, plan, &pts_ms),
         })
         .collect();
-    frames.sort_by_key(|f| f.t_ms);
+    Ok((frames, used, truncated))
+}
 
-    Ok(ExtractOutcome {
-        frames,
-        duration_ms,
-        truncated,
-        used_fps_mode: used,
-    })
+/// 跳转定位抽帧：每个目标时刻一次调用，`-ss` 放在 `-i` 之前（快速定位）。
+///
+/// 时间戳语义：带 `-copyts` 让 `showinfo` 报告**原始时间轴**的 pts（否则 ffmpeg 会把
+/// 时间轴整体平移到 0，实测值全是 0，无法校验落点），并优先用实测值作 `t_ms`，
+/// 缺失时退回请求时刻。实测偏离请求超过 [`MAX_SEEK_DRIFT_MS`] 时报
+/// [`VideoError::BadSeek`]——说明该文件的定位行为异常，宁可报错也不返回错位帧。
+fn extract_by_seek(
+    ffmpeg_bin: &Path,
+    video: &Path,
+    out_dir: &Path,
+    options: &ExtractOptions,
+    targets_ms: &[u64],
+    runner: &dyn ProcessRunner,
+) -> Result<(Vec<VideoFrame>, FpsModePolicy, usize), VideoError> {
+    let mut frames: Vec<VideoFrame> = Vec::with_capacity(targets_ms.len());
+    for (i, &at_ms) in targets_ms.iter().enumerate() {
+        let image_path = out_dir.join(format!("frame_{i:06}.png"));
+        let args = build_seek_args(video, at_ms, &image_path, options);
+        let out = runner.run(ffmpeg_bin, &args)?;
+        if !out.success {
+            return Err(VideoError::FfmpegFailed(format!(
+                "第 {}/{} 帧（{at_ms}ms）抽取失败：{}",
+                i + 1,
+                targets_ms.len(),
+                tail(&out.stderr, 600)
+            )));
+        }
+        if !image_path.is_file() {
+            return Err(VideoError::FfmpegFailed(format!(
+                "第 {}/{} 帧（{at_ms}ms）ffmpeg 成功退出但未产出帧文件",
+                i + 1,
+                targets_ms.len()
+            )));
+        }
+        let actual = parse_pts_times_ms(&out.stderr).first().copied();
+        if let Some(a) = actual {
+            let drift = a.abs_diff(at_ms);
+            if drift > MAX_SEEK_DRIFT_MS {
+                return Err(VideoError::BadSeek {
+                    requested_ms: at_ms,
+                    actual_ms: Some(a),
+                    drift_ms: drift,
+                });
+            }
+        }
+        frames.push(VideoFrame {
+            image_path,
+            t_ms: actual.unwrap_or(at_ms),
+        });
+    }
+    // 跳转定位不写帧率直通参数（每帧单张），回报值只用于界面说明。
+    let used = if options.fps_mode == FpsModePolicy::Vsync {
+        FpsModePolicy::Vsync
+    } else {
+        FpsModePolicy::FpsMode
+    };
+    Ok((frames, used, 0))
+}
+
+/// 跳转定位的参数：`-ss` 在 `-i` 之前 ⇒ ffmpeg 快速定位（不解码前面的数据）。
+fn build_seek_args(
+    video: &Path,
+    at_ms: u64,
+    image_path: &Path,
+    options: &ExtractOptions,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostdin".into(), "-y".into()];
+    args.push("-ss".into());
+    args.push(format!("{:.3}", at_ms as f64 / 1000.0));
+    args.push("-threads".into());
+    args.push(options.threads.max(1).to_string());
+    args.push("-i".into());
+    args.push(path_arg(video));
+    // 保留原始时间轴：否则 showinfo 的 pts 会被平移到 0，无法校验落点/报告实测时刻。
+    args.push("-copyts".into());
+    let mut filters = Vec::new();
+    if options.max_edge > 0 {
+        filters.push(format!(
+            "scale='min({m},iw)':'min({m},ih)':force_original_aspect_ratio=decrease",
+            m = options.max_edge
+        ));
+    }
+    filters.push("showinfo".into());
+    args.push("-vf".into());
+    args.push(filters.join(","));
+    args.push("-frames:v".into());
+    args.push("1".into());
+    args.push("-threads".into());
+    args.push(options.threads.max(1).to_string());
+    args.push(path_arg(image_path));
+    args
+}
+
+/// 解析实际生效的抽帧方式（Auto 按时长阈值解析；时长未知 ⇒ Filter）。
+pub fn resolve_method(
+    requested: ExtractMethod,
+    duration_ms: Option<u64>,
+    seek_threshold_ms: u64,
+) -> ExtractMethod {
+    if requested != ExtractMethod::Auto {
+        return requested;
+    }
+    match duration_ms {
+        Some(d) if d > 0 && d >= seek_threshold_ms => ExtractMethod::Seek,
+        _ => ExtractMethod::Filter,
+    }
+}
+
+/// 跳转定位的目标时刻（毫秒，升序，≤ max_frames 个）。
+///
+/// - 短视频（不足一个间隔）⇒ 单帧中点（与 [`plan_sampling`] 一致）；
+/// - 其它 ⇒ `0, every, 2*every, …`（过 `every` 已在 [`plan_sampling`] 放大到覆盖全片）；
+/// - 时长未知 ⇒ 空（调用方回退帧率过滤）。
+pub fn target_times_ms(duration_ms: Option<u64>, plan: &SamplingPlan) -> Vec<u64> {
+    if let Some(single) = plan.single_at_ms {
+        return vec![single];
+    }
+    let Some(d) = duration_ms.filter(|d| *d > 0) else {
+        return Vec::new();
+    };
+    let times: Vec<u64> = (0..plan.max_frames)
+        .map(|i| (i as u64).saturating_mul(plan.every_ms))
+        .take_while(|t| *t < d)
+        .collect();
+    if times.is_empty() {
+        vec![d / 2]
+    } else {
+        times
+    }
 }
 
 /// 帧时间戳：优先用 ffmpeg `showinfo` 的实测 pts，缺失时退回"序号 × 采样间隔"。
@@ -548,15 +750,21 @@ mod tests {
                 .any(|a| self.fail_args.iter().any(|flag| flag == a));
             if !is_probe {
                 let out_arg = args.last().unwrap().clone();
-                let dir = Path::new(&out_arg).parent().unwrap().to_path_buf();
-                let count = if will_fail {
-                    self.partial_frames_on_failure
-                } else {
-                    self.frames
-                };
-                for i in 0..count {
-                    let p = dir.join(format!("frame_{:06}.png", i));
-                    fs::write(&p, b"fake").unwrap();
+                if out_arg.contains("%06d") {
+                    // 帧率过滤：按序号模板落盘。
+                    let dir = Path::new(&out_arg).parent().unwrap().to_path_buf();
+                    let count = if will_fail {
+                        self.partial_frames_on_failure
+                    } else {
+                        self.frames
+                    };
+                    for i in 0..count {
+                        let p = dir.join(format!("frame_{i:06}.png"));
+                        fs::write(&p, b"fake").unwrap();
+                    }
+                } else if !will_fail {
+                    // 跳转定位：单帧调用，只写这次请求的那个文件。
+                    fs::write(Path::new(&out_arg), b"fake").unwrap();
                 }
             }
             if will_fail {
@@ -668,6 +876,8 @@ mod tests {
             duration_hint_ms: Some(120_000),
             max_edge: 1024,
             fps_mode: FpsModePolicy::FpsMode,
+            method: ExtractMethod::Filter,
+            ..ExtractOptions::default()
         };
         let outcome = extract_frames_with(
             &ff,
@@ -699,6 +909,7 @@ mod tests {
         let runner = FakeRunner::new(1, "");
         let opts = ExtractOptions {
             duration_hint_ms: Some(600_000),
+            method: ExtractMethod::Filter,
             ..ExtractOptions::default()
         };
         extract_frames_with(
@@ -747,6 +958,7 @@ mod tests {
         let runner = FakeRunner::new(2, stderr);
         let opts = ExtractOptions {
             duration_hint_ms: Some(300_000),
+            method: ExtractMethod::Filter,
             ..ExtractOptions::default()
         };
         let outcome = extract_frames_with(
@@ -769,6 +981,7 @@ mod tests {
         let opts = ExtractOptions {
             max_frames: 24,
             duration_hint_ms: Some(600_000),
+            method: ExtractMethod::Filter,
             ..ExtractOptions::default()
         };
         let outcome = extract_frames_with(
@@ -954,6 +1167,176 @@ mod tests {
         let joined = runner.last_args().join(" ");
         assert!(!joined.contains("-fps_mode"), "单帧路径不带帧率直通参数: {joined}");
         assert!(!joined.contains("-vsync"), "单帧路径不带帧率直通参数: {joined}");
+    }
+
+    // ── 抽帧方式（帧率过滤 vs 跳转定位）──────────────────────────────────
+
+    #[test]
+    fn resolve_method_auto_uses_seek_threshold() {
+        // 默认阈值 60s：短于它走帧率过滤，达到/超过走跳转定位。
+        assert_eq!(
+            resolve_method(ExtractMethod::Auto, Some(59_999), DEFAULT_SEEK_THRESHOLD_MS),
+            ExtractMethod::Filter
+        );
+        assert_eq!(
+            resolve_method(ExtractMethod::Auto, Some(60_000), DEFAULT_SEEK_THRESHOLD_MS),
+            ExtractMethod::Seek
+        );
+        assert_eq!(
+            resolve_method(ExtractMethod::Auto, Some(3_600_000), DEFAULT_SEEK_THRESHOLD_MS),
+            ExtractMethod::Seek
+        );
+        // 时长未知 ⇒ 只能帧率过滤（跳转定位需要目标时刻）。
+        assert_eq!(
+            resolve_method(ExtractMethod::Auto, None, DEFAULT_SEEK_THRESHOLD_MS),
+            ExtractMethod::Filter
+        );
+        // 阈值可配 + 显式指定优先。
+        assert_eq!(
+            resolve_method(ExtractMethod::Auto, Some(30_000), 10_000),
+            ExtractMethod::Seek
+        );
+        assert_eq!(
+            resolve_method(ExtractMethod::Filter, Some(3_600_000), 60_000),
+            ExtractMethod::Filter
+        );
+        assert_eq!(
+            resolve_method(ExtractMethod::Seek, Some(1_000), 60_000),
+            ExtractMethod::Seek
+        );
+    }
+
+    #[test]
+    fn target_times_cover_the_whole_clip_within_max_frames() {
+        // 10 分钟 / 24 帧 ⇒ 每 25s 一个目标时刻，覆盖全片。
+        let plan = plan_sampling(Some(600_000), 5_000, 24);
+        let times = target_times_ms(Some(600_000), &plan);
+        assert_eq!(times.len(), 24);
+        assert_eq!(times[0], 0);
+        assert_eq!(times[1], 25_000);
+        assert!(times.iter().all(|t| *t < 600_000));
+
+        // 短视频 ⇒ 单帧中点。
+        let plan = plan_sampling(Some(3_000), 5_000, 24);
+        assert_eq!(target_times_ms(Some(3_000), &plan), vec![1_500]);
+
+        // 时长未知 ⇒ 空（调用方回退帧率过滤）。
+        let plan = plan_sampling(None, 5_000, 24);
+        assert!(target_times_ms(None, &plan).is_empty());
+    }
+
+    #[test]
+    fn seek_puts_ss_before_input_and_makes_one_call_per_target() {
+        let (ff, video, out) = fixture("seek_args");
+        let runner = FakeRunner::new(0, "");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(120_000),
+            method: ExtractMethod::Seek,
+            ..ExtractOptions::default()
+        };
+        let outcome = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.method, ExtractMethod::Seek);
+        // 120s / 24 = 5s ⇒ 24 个目标时刻，每帧一次调用（一次 probe 都没有：给了 hint）。
+        assert_eq!(runner.call_count(), 24);
+        assert_eq!(outcome.frames.len(), 24);
+        assert_eq!(outcome.frames[0].t_ms, 0);
+        assert_eq!(outcome.frames[1].t_ms, 5_000);
+
+        let first = runner.calls.borrow()[0].join(" ");
+        // `-ss` 必须在 `-i` 之前（快速定位），且每次只取一帧。
+        let ss = first.find("-ss").expect("-ss 缺失");
+        let i = first.find("-i").expect("-i 缺失");
+        assert!(ss < i, "跳转定位要求 -ss 在 -i 之前: {first}");
+        assert!(first.contains("-frames:v 1"), "{first}");
+        assert!(first.contains("showinfo"), "需要实测落点校验: {first}");
+        assert!(outcome.frames.iter().all(|f| f.image_path.is_file()));
+    }
+
+    #[test]
+    fn seek_reports_bad_seek_when_landing_drift_exceeds_gate() {
+        let (ff, video, out) = fixture("seek_drift");
+        // showinfo 报告落点在 12s，但请求的是 5s ⇒ 偏差 7s，超门。
+        let runner = FakeRunner::new(0, "n: 0 pts_time:12.000000");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(120_000),
+            method: ExtractMethod::Seek,
+            ..ExtractOptions::default()
+        };
+        let err = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap_err();
+        match err {
+            VideoError::BadSeek { requested_ms, drift_ms, .. } => {
+                assert_eq!(requested_ms, 0);
+                assert_eq!(drift_ms, 12_000);
+            }
+            other => panic!("应报 BadSeek，实际 {other:?}"),
+        }
+    }
+
+    #[test]
+    fn seek_fails_when_ffmpeg_reports_success_but_writes_no_frame() {
+        let (ff, video, out) = fixture("seek_nofile");
+        let runner = FakeRunner::new(0, "");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(120_000),
+            method: ExtractMethod::Seek,
+            ..ExtractOptions::default()
+        };
+        // FakeRunner 在 seek 调用（非失败）时会写文件；这里用 fail 分支模拟"没落盘"：
+        // 失败即会走到错误路径，断言错误信息里带帧序号与时刻。
+        let runner = runner.failing_on("-ss", 0);
+        let err = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap_err();
+        let VideoError::FfmpegFailed(msg) = err else {
+            panic!("应报 FfmpegFailed");
+        };
+        assert!(msg.contains("第 1/24 帧"), "{msg}");
+    }
+
+    #[test]
+    fn explicit_filter_is_used_even_for_long_videos() {
+        let (ff, video, out) = fixture("seek_off");
+        let runner = FakeRunner::new(2, "");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(600_000),
+            method: ExtractMethod::Filter,
+            ..ExtractOptions::default()
+        };
+        let outcome = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+        assert_eq!(outcome.method, ExtractMethod::Filter);
+        assert_eq!(runner.call_count(), 1, "帧率过滤只调用一次");
+        assert!(runner.last_args().join(" ").contains("fps=1000/25000"));
     }
 
     #[test]
