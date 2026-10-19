@@ -10,6 +10,11 @@
 //!
 //! 27.4 现状：固定间隔抽帧已实现（含短视频兜底、长视频均匀重采样、帧数上限、pts 时间戳）；
 //! 镜头检测（[`FrameStrategy::Scene`]）仍返回 [`VideoError::Unavailable`]——不伪造结果。
+//!
+//! **FFmpeg 版本兼容**：帧时间戳保真需要"帧率直通"，`-fps_mode vfr` 仅在 FFmpeg ≥ 5.1 可用，
+//! 更早的版本必须写 `-vsync vfr`。策略见 [`FpsModePolicy`]：调用方按
+//! [`fps_mode_policy_for_version`] 传入已知版本；版本无法识别时用 [`FpsModePolicy::Auto`]
+//! （先试 `-fps_mode`，失败后回退 `-vsync` 重试一次）。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +40,46 @@ pub struct VideoFrame {
     pub t_ms: u64,
 }
 
+/// 帧率直通参数的写法（`-fps_mode vfr` 需要 FFmpeg ≥ 5.1；旧版用 `-vsync vfr`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FpsModePolicy {
+    /// 新写法（FFmpeg ≥ 5.1）：`-fps_mode vfr`。
+    FpsMode,
+    /// 旧写法（FFmpeg < 5.1）：`-vsync vfr`。
+    Vsync,
+    /// 版本未知：先试 [`FpsModePolicy::FpsMode`]，失败后回退 [`FpsModePolicy::Vsync`] 重试一次。
+    Auto,
+}
+
+impl FpsModePolicy {
+    /// 该策略下首选的参数名。
+    pub fn primary_flag(&self) -> &'static str {
+        match self {
+            FpsModePolicy::Vsync => "-vsync",
+            _ => "-fps_mode",
+        }
+    }
+
+    /// 是否允许在首选写法失败后回退重试。
+    pub fn allows_fallback(&self) -> bool {
+        matches!(self, FpsModePolicy::Auto)
+    }
+}
+
+/// 按 FFmpeg 主/次版本选择帧率直通参数写法。
+///
+/// `major`/`minor` 传负数表示"版本不可识别"（⇒ [`FpsModePolicy::Auto`]）。
+pub fn fps_mode_policy_for_version(major: i32, minor: i32) -> FpsModePolicy {
+    if major < 0 {
+        return FpsModePolicy::Auto;
+    }
+    if major > 5 || (major == 5 && minor >= 1) {
+        FpsModePolicy::FpsMode
+    } else {
+        FpsModePolicy::Vsync
+    }
+}
+
 /// 抽帧参数（与策略正交）。
 #[derive(Debug, Clone, Copy)]
 pub struct ExtractOptions {
@@ -46,6 +91,8 @@ pub struct ExtractOptions {
     pub duration_hint_ms: Option<u64>,
     /// 输出帧的最大边长（像素，默认 1024，0 表示不缩放）。
     pub max_edge: u32,
+    /// 帧率直通参数写法（按 FFmpeg 版本；见 [`fps_mode_policy_for_version`]）。
+    pub fps_mode: FpsModePolicy,
 }
 
 impl Default for ExtractOptions {
@@ -55,6 +102,7 @@ impl Default for ExtractOptions {
             max_frames: 24,
             duration_hint_ms: None,
             max_edge: 1024,
+            fps_mode: FpsModePolicy::Auto,
         }
     }
 }
@@ -137,6 +185,8 @@ pub struct ExtractOutcome {
     pub duration_ms: Option<u64>,
     /// 因帧数上限被丢弃的帧数（0 表示未截断）。
     pub truncated: usize,
+    /// 本次实际生效的帧率直通写法（回退成功时为 `Vsync`，便于调用方缓存）。
+    pub used_fps_mode: FpsModePolicy,
 }
 
 /// 可注入执行器的抽帧实现（测试用）。
@@ -178,8 +228,25 @@ pub fn extract_frames_with(
     };
 
     let plan = plan_sampling(duration_ms, every_ms, options.max_frames);
-    let args = build_args(video, out_dir, &plan, options);
-    let out = runner.run(ffmpeg_bin, &args)?;
+    let mut used = options.fps_mode;
+    let args = build_args(video, out_dir, &plan, options, used);
+    let mut out = runner.run(ffmpeg_bin, &args)?;
+    if !out.success && used.allows_fallback() && plan.single_at_ms.is_none() {
+        // 版本不可识别：先试了 `-fps_mode`，失败则用旧写法 `-vsync` 重试一次。
+        // 重试前清掉上次可能已落盘的半成品帧，避免混入结果。
+        clean_stale_frames(out_dir)?;
+        let first_err = out.stderr.clone();
+        used = FpsModePolicy::Vsync;
+        let retry_args = build_args(video, out_dir, &plan, options, used);
+        out = runner.run(ffmpeg_bin, &retry_args)?;
+        if !out.success {
+            return Err(VideoError::FfmpegFailed(format!(
+                "回退 -vsync 亦失败：{}\n原始错误（-fps_mode）：{}",
+                tail(&out.stderr, 600),
+                tail(&first_err, 600)
+            )));
+        }
+    }
     if !out.success {
         return Err(VideoError::FfmpegFailed(tail(&out.stderr, 800)));
     }
@@ -207,6 +274,7 @@ pub fn extract_frames_with(
         frames,
         duration_ms,
         truncated,
+        used_fps_mode: used,
     })
 }
 
@@ -326,6 +394,7 @@ fn build_args(
     out_dir: &Path,
     plan: &SamplingPlan,
     options: &ExtractOptions,
+    fps_mode: FpsModePolicy,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostdin".into(), "-y".into()];
     // 解码器线程数（真正的 CPU 大户）——与编码侧一起限制在 threads 以内。
@@ -361,8 +430,11 @@ fn build_args(
     }
     args.push("-vf".into());
     args.push(filters.join(","));
-    args.push("-fps_mode".into());
-    args.push("vfr".into());
+    if plan.single_at_ms.is_none() {
+        // 帧率直通：新版 `-fps_mode vfr`，旧版 `-vsync vfr`（单帧路径不需要）。
+        args.push(fps_mode.primary_flag().into());
+        args.push("vfr".into());
+    }
     args.push("-frames:v".into());
     args.push(
         (if plan.single_at_ms.is_some() {
@@ -433,6 +505,10 @@ mod tests {
         frames: usize,
         /// 返回的 stderr（可含 showinfo / Duration）。
         stderr: String,
+        /// 参数里出现这些开关之一的调用返回失败（模拟旧版 ffmpeg 不认新参数）。
+        fail_args: Vec<String>,
+        /// 失败调用先写几个半成品帧（验证重试前会清掉）。
+        partial_frames_on_failure: usize,
         calls: std::cell::RefCell<Vec<Vec<String>>>,
     }
 
@@ -441,12 +517,24 @@ mod tests {
             Self {
                 frames,
                 stderr: stderr.to_string(),
+                fail_args: Vec::new(),
+                partial_frames_on_failure: 0,
                 calls: std::cell::RefCell::new(Vec::new()),
             }
         }
 
+        fn failing_on(mut self, arg: &str, partial_frames: usize) -> Self {
+            self.fail_args.push(arg.to_string());
+            self.partial_frames_on_failure = partial_frames.max(self.partial_frames_on_failure);
+            self
+        }
+
         fn last_args(&self) -> Vec<String> {
             self.calls.borrow().last().cloned().unwrap_or_default()
+        }
+
+        fn call_count(&self) -> usize {
+            self.calls.borrow().len()
         }
     }
 
@@ -455,13 +543,27 @@ mod tests {
             self.calls.borrow_mut().push(args.to_vec());
             // banner 探测（只有 -i，没有输出）时不产生帧。
             let is_probe = !args.iter().any(|a| a.ends_with(".png"));
+            let will_fail = args
+                .iter()
+                .any(|a| self.fail_args.iter().any(|flag| flag == a));
             if !is_probe {
                 let out_arg = args.last().unwrap().clone();
                 let dir = Path::new(&out_arg).parent().unwrap().to_path_buf();
-                for i in 0..self.frames {
+                let count = if will_fail {
+                    self.partial_frames_on_failure
+                } else {
+                    self.frames
+                };
+                for i in 0..count {
                     let p = dir.join(format!("frame_{:06}.png", i));
                     fs::write(&p, b"fake").unwrap();
                 }
+            }
+            if will_fail {
+                return Ok(ProcessOutput {
+                    success: false,
+                    stderr: "Unrecognized option 'fps_mode'.".to_string(),
+                });
             }
             Ok(ProcessOutput {
                 success: true,
@@ -565,6 +667,7 @@ mod tests {
             max_frames: 24,
             duration_hint_ms: Some(120_000),
             max_edge: 1024,
+            fps_mode: FpsModePolicy::FpsMode,
         };
         let outcome = extract_frames_with(
             &ff,
@@ -702,6 +805,155 @@ mod tests {
         .unwrap();
         assert_eq!(outcome.frames.len(), 2);
         assert!(!out.join("frame_000099.png").exists(), "残留帧必须清掉");
+    }
+
+    // ── FFmpeg 版本兼容（-fps_mode ≥ 5.1 / -vsync 更早）────────────────────
+
+    #[test]
+    fn fps_mode_policy_follows_ffmpeg_version() {
+        // ≥ 5.1 → 新写法；< 5.1 → 旧写法；未知（负数）→ 自动回退。
+        assert_eq!(fps_mode_policy_for_version(5, 1), FpsModePolicy::FpsMode);
+        assert_eq!(fps_mode_policy_for_version(5, 0), FpsModePolicy::Vsync);
+        assert_eq!(fps_mode_policy_for_version(6, 1), FpsModePolicy::FpsMode);
+        assert_eq!(fps_mode_policy_for_version(7, 0), FpsModePolicy::FpsMode);
+        assert_eq!(fps_mode_policy_for_version(4, 4), FpsModePolicy::Vsync);
+        assert_eq!(fps_mode_policy_for_version(3, 4), FpsModePolicy::Vsync);
+        assert_eq!(fps_mode_policy_for_version(-1, -1), FpsModePolicy::Auto);
+
+        assert_eq!(FpsModePolicy::FpsMode.primary_flag(), "-fps_mode");
+        assert_eq!(FpsModePolicy::Vsync.primary_flag(), "-vsync");
+        assert_eq!(FpsModePolicy::Auto.primary_flag(), "-fps_mode");
+        assert!(FpsModePolicy::Auto.allows_fallback());
+        assert!(!FpsModePolicy::FpsMode.allows_fallback());
+        assert!(!FpsModePolicy::Vsync.allows_fallback());
+    }
+
+    #[test]
+    fn known_new_version_uses_fps_mode_flag() {
+        let (ff, video, out) = fixture("fpsmode_new");
+        let runner = FakeRunner::new(2, "");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(20_000),
+            fps_mode: FpsModePolicy::FpsMode,
+            ..ExtractOptions::default()
+        };
+        let outcome = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+        let joined = runner.last_args().join(" ");
+        assert!(joined.contains("-fps_mode vfr"), "{joined}");
+        assert!(!joined.contains("-vsync"), "{joined}");
+        assert_eq!(outcome.used_fps_mode, FpsModePolicy::FpsMode);
+        assert_eq!(runner.call_count(), 1, "已知版本不该重试");
+    }
+
+    #[test]
+    fn known_old_version_uses_vsync_flag() {
+        let (ff, video, out) = fixture("fpsmode_old");
+        let runner = FakeRunner::new(2, "");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(20_000),
+            fps_mode: FpsModePolicy::Vsync,
+            ..ExtractOptions::default()
+        };
+        let outcome = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+        let joined = runner.last_args().join(" ");
+        assert!(joined.contains("-vsync vfr"), "{joined}");
+        assert!(!joined.contains("-fps_mode"), "{joined}");
+        assert_eq!(outcome.used_fps_mode, FpsModePolicy::Vsync);
+        assert_eq!(runner.call_count(), 1);
+    }
+
+    #[test]
+    fn unknown_version_falls_back_to_vsync_once_and_cleans_partial_frames() {
+        let (ff, video, out) = fixture("fpsmode_auto");
+        // 第一次（-fps_mode）失败并留下 1 个半成品帧；第二次（-vsync）成功产出 2 帧。
+        let runner = FakeRunner::new(2, "").failing_on("-fps_mode", 1);
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(20_000),
+            fps_mode: FpsModePolicy::Auto,
+            ..ExtractOptions::default()
+        };
+        let outcome = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+        assert_eq!(runner.call_count(), 2, "未知版本应回退重试一次");
+        assert!(runner.last_args().join(" ").contains("-vsync vfr"));
+        assert_eq!(outcome.used_fps_mode, FpsModePolicy::Vsync);
+        assert_eq!(outcome.frames.len(), 2, "半成品帧必须清掉，只剩重试产出");
+        assert!(outcome.frames.iter().all(|f| f.image_path.exists()));
+    }
+
+    #[test]
+    fn fallback_failure_reports_both_errors() {
+        let (ff, video, out) = fixture("fpsmode_fail");
+        // 新旧写法都失败：回退一次后仍失败，必须报错（不能静默返回空集）。
+        let runner = FakeRunner::new(2, "")
+            .failing_on("-fps_mode", 0)
+            .failing_on("-vsync", 0);
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(20_000),
+            fps_mode: FpsModePolicy::Auto,
+            ..ExtractOptions::default()
+        };
+        let err = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap_err();
+        assert_eq!(runner.call_count(), 2, "只回退重试一次，不无限重试");
+        let VideoError::FfmpegFailed(msg) = err else {
+            panic!("应报 FfmpegFailed");
+        };
+        assert!(msg.contains("回退 -vsync 亦失败"), "{msg}");
+        assert!(msg.contains("Unrecognized option"), "需带上原始错误: {msg}");
+    }
+
+    #[test]
+    fn single_frame_path_omits_fps_mode_flags() {
+        let (ff, video, out) = fixture("fpsmode_single");
+        let runner = FakeRunner::new(1, "");
+        let opts = ExtractOptions {
+            duration_hint_ms: Some(3_000),
+            fps_mode: FpsModePolicy::Auto,
+            ..ExtractOptions::default()
+        };
+        extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+        let joined = runner.last_args().join(" ");
+        assert!(!joined.contains("-fps_mode"), "单帧路径不带帧率直通参数: {joined}");
+        assert!(!joined.contains("-vsync"), "单帧路径不带帧率直通参数: {joined}");
     }
 
     #[test]
