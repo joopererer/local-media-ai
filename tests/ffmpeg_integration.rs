@@ -17,14 +17,34 @@
 //! 用于验证默认选择策略（时长 ≥ 60s 走跳转定位）。
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use sha2::{Digest, Sha256};
 use video_frames::{
     extract_frames, plan_sampling, target_times_ms, ExtractMethod, ExtractOptions,
     FrameStrategy, FpsModePolicy,
 };
+
+fn sha256_of(p: &Path) -> String {
+    let mut f = fs::File::open(p).expect("open png");
+    let mut h = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = f.read(&mut buf).unwrap();
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    format!("{:x}", h.finalize())
+}
+
+fn path_arg(p: &Path) -> String {
+    p.to_string_lossy().into_owned()
+}
 
 /// 抽帧间隔（毫秒）。真实长视频会由均匀重采样放大到覆盖全片。
 const EVERY_MS: u64 = 1_000;
@@ -216,77 +236,159 @@ fn extracts_frames_from_chinese_and_space_path() {
         seek.frames
     );
 
-    // 时刻比对：分别统计每种方式相对于目标时刻的偏差
     let plan = plan_sampling(Some(seek.duration_ms), EVERY_MS, MAX_FRAMES);
     let targets = target_times_ms(Some(seek.duration_ms), &plan);
 
-    // 计算每种方式相对于目标时刻的偏差
-    let calc_deviation = |times: &[u64], targets: &[u64]| -> (u64, f64) {
-        let max_dev: u64 = times.iter().zip(targets.iter())
+    // 27.4 时刻语义复核：
+    // - Seek 路径：t_ms 是代码算的目标时刻（即 target_times_ms 的 mid-point），
+    //   偏差仅来自 ffmpeg 落点（应 ≤ 半间隔）。
+    // - Filter 路径：t_ms 来自 showinfo 的**实测** pts（扣 start），不再与
+    //   target_times_ms 对齐；偏差按"实测 pts vs 每个采样间隔的下边界"度量。
+    let calc_max_dev = |times: &[u64], targets: &[u64]| -> u64 {
+        times.iter().zip(targets.iter())
             .map(|(t, tgt)| t.abs_diff(*tgt))
             .max()
-            .unwrap_or(0);
-        let avg_dev: f64 = if !times.is_empty() && !targets.is_empty() {
-            let sum: u64 = times.iter().zip(targets.iter())
-                .map(|(t, tgt)| t.abs_diff(*tgt))
-                .sum();
-            sum as f64 / times.len().min(targets.len()) as f64
-        } else {
-            0.0
-        };
-        (max_dev, avg_dev)
+            .unwrap_or(0)
     };
 
-    let (seek_max_dev, seek_avg_dev) = calc_deviation(&seek.times, &targets);
-    let (filter_max_dev, filter_avg_dev) = calc_deviation(&filter.times, &targets);
-
-    // 断言：各自相对目标时刻的最大偏差不超过半个采样间隔
-    let half_interval = plan.every_ms / 2;
+    let seek_max_dev = calc_max_dev(&seek.times, &targets);
     assert!(
-        seek_max_dev <= half_interval,
-        "跳转定位最大偏差 {seek_max_dev}ms > 半个采样间隔 {half_interval}ms"
-    );
-    assert!(
-        filter_max_dev <= half_interval,
-        "帧率过滤最大偏差 {filter_max_dev}ms > 半个采样间隔 {half_interval}ms"
+        seek_max_dev <= plan.every_ms / 2,
+        "跳转定位最大偏差 {seek_max_dev}ms > 半采样间隔 {}ms",
+        plan.every_ms / 2
     );
 
-    // 两种方式之间的比较（仅作参考输出，不作断言）
+    // 关键断言 1（filter 路径）：每个 t_ms 都恰落在 i×every 位置附近（≤ 半间隔）。
+    // —— 这是 27.4 复核要保证的事：实测 PTS = 整 every 倍，而非"中点"。
+    let boundary_max: u64 = (0..filter.times.len())
+        .map(|i| filter.times[i].abs_diff(i as u64 * plan.every_ms))
+        .max()
+        .unwrap_or(0);
+    assert!(
+        boundary_max <= plan.every_ms / 2,
+        "filter 路径：实测 pts 应在 i×every 附近（实测 vs 边界 max={boundary_max}ms, 容许 ≤{half}ms）",
+        half = plan.every_ms / 2
+    );
+
+    // 关键断言 2（seek 路径）：t_ms 应在代码目标中点的 ±every 范围（ffmpeg 落点偏差+ 关键帧布局决定）。
+    let seek_within_interval_max: u64 = (0..seek.times.len())
+        .map(|i| seek.times[i].abs_diff(*targets.get(i).unwrap_or(&0)))
+        .max()
+        .unwrap_or(0);
+    assert!(
+        seek_within_interval_max <= plan.every_ms,
+        "seek 路径：t_ms 应在请求点 ± 一个采样间隔（实测偏差 max={seek_within_interval_max}ms, 容许 ≤{}ms）",
+        plan.every_ms
+    );
+
+    // 耗时输出（不设硬断言，详见 extract_by_seek 的实测记录）。
     let between_max_dev = seek.times.iter().zip(filter.times.iter())
         .map(|(a, b)| a.abs_diff(*b))
         .max()
         .unwrap_or(0);
-    let between_avg_dev: f64 = seek.times.iter().zip(filter.times.iter())
-        .map(|(a, b)| a.abs_diff(*b) as f64)
-        .sum::<f64>() / seek.times.len().min(filter.times.len()) as f64;
-
-    let speedup = filter.elapsed_ms as f64 / seek.elapsed_ms.max(1) as f64;
-    println!("━━━ 精度对比 ━━━");
-    println!("跳转定位：最大偏差 {seek_max_dev}ms，平均偏差 {seek_avg_dev:.1}ms");
-    println!("帧率过滤：最大偏差 {filter_max_dev}ms，平均偏差 {filter_avg_dev:.1}ms");
-    println!("方式间差异：最大 {between_max_dev}ms，平均 {between_avg_dev:.1}ms");
+    println!("━━━ 时刻对比（27.4 复核后）━━━");
+    println!("seek vs mid ± half：max {}ms（应 ≤ 半间隔）", seek_within_interval_max);
+    println!("filter vs i×every boundary：max {boundary_max}ms（应 ≤ 半间隔）");
+    println!("方式间偏差：max {between_max_dev}ms（仅参考）");
     println!("━━━ 性能对比 ━━━");
-    let seek_ms = seek.elapsed_ms;
-    let filter_ms = filter.elapsed_ms;
-    println!("跳转定位 {seek_ms}ms vs 帧率过滤 {filter_ms}ms ⇒ 耗时比 {speedup:.2}×");
-    println!("━━━ 结论 ━━━");
-    if seek.duration_ms >= video_frames::DEFAULT_SEEK_THRESHOLD_MS {
-        let seek_dur = seek.duration_ms;
-        let filter_dur = filter.duration_ms;
-        let threshold = video_frames::DEFAULT_SEEK_THRESHOLD_MS;
-        println!("该视频时长 {0}/{1} ms ≥ 阈值 {2} ms，应使用跳转定位",
-            seek_dur, filter_dur, threshold);
-    }
+    println!("跳转定位 {}ms vs 帧率过滤 {}ms", seek.elapsed_ms, filter.elapsed_ms);
 
-    // 耗时不设"seek 必须更快"的硬断言：跳转定位每帧起一个进程（约 50ms/次、24 帧 ⇒
-    // ~1.2s 固定开销），对**易解码**的合成素材反而可能更慢（实测 180s 720p testsrc：
-    // filter 1.39s vs seek 1.99s），而对真实 1080p 长片（单次全片解码 ~20s+）快一个量级。
-    // 这里只做一个宽松的健全性上界，防止实现退化（例如误把解码写成全片两遍）。
+    // 跳转定位耗时不退化到 read-the-whole-file 的程度。
     let hard_ceiling = filter.elapsed_ms * 3 + 3_000;
     assert!(
         seek.elapsed_ms <= hard_ceiling,
         "跳转定位耗时异常（seek={}ms, filter={}ms，上限 {hard_ceiling}ms）",
         seek.elapsed_ms,
         filter.elapsed_ms
+    );
+}
+
+/// 27.4.5 验收：抽出的帧画面里的**实测时间戳**与 t_ms 必须一致。
+///
+/// 实现方式：合成视频时用 `drawtext` 把当前帧的**真实 PTS** 烧录到画面上。
+/// 抽帧后对每个帧按其 t_ms 用精确 `-i ... -ss t_ms -frames:v 1` seek 一帧，
+/// 比较两张 PNG 的 SHA256——若 filter 的 t_ms 与画面所在真实时刻一致，
+/// 这两张图必然字节相同（**绕开 OCR**，用 ffmpeg 自身 seek 做"基线"）。
+///
+/// 关键：filter 路径不再使用代码目标时刻，t_ms = ffmpeg showinfo 实测 pts − start。
+/// 若实现退化（如旧实现按 i×every 标记 t_ms 而真实画面在中点），
+/// seek 的基线与 filter 抽到的图字节比对将失败。
+#[test]
+#[ignore = "需要本机 ffmpeg：设置 FO_FFMPEG_BIN 后手动运行"]
+fn filter_timestamp_matches_pixel_identity() {
+    let root = temp_root("burn");
+    let dir = root.join("时间码 验证");
+    fs::create_dir_all(&dir).unwrap();
+    let video = dir.join("时间码源.mp4");
+
+    // 6 秒 / 10 fps / 320x240，drawtext 烧录真实 PTS（HH:MM:SS.mmm）。
+    let synth = Command::new(ffmpeg_bin())
+        .args([
+            "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+            "-f", "lavfi",
+            "-i", "testsrc=duration=6:size=320x240:rate=10",
+            "-vf",
+            "drawtext=fontfile='C\\:/Windows/Fonts/consola.ttf'\
+             :text='%{pts\\:hms}'\
+             :fontcolor=white:fontsize=18:x=2:y=2\
+             :box=1:boxcolor=black@0.7:boxborderw=6",
+            "-pix_fmt", "yuv420p",
+        ])
+        .arg(&video)
+        .output()
+        .expect("ffmpeg 合成失败");
+    assert!(synth.status.success(), "testsrc + drawtext 合成失败");
+
+    let out_dir = dir.join("filter_out");
+    fs::create_dir_all(&out_dir).unwrap();
+    let opts = ExtractOptions {
+        threads: 2,
+        max_frames: MAX_FRAMES,
+        duration_hint_ms: Some(6_000),
+        max_edge: 0,
+        fps_mode: FpsModePolicy::Auto,
+        method: ExtractMethod::Filter,
+        ..ExtractOptions::default()
+    };
+    let outcome = extract_frames(
+        &ffmpeg_bin(), &video,
+        FrameStrategy::Interval { every_ms: EVERY_MS },
+        &out_dir, &opts,
+    )
+    .expect("filter 抽取失败");
+
+    assert!(!outcome.frames.is_empty(), "filter 路径至少应抽到一帧");
+
+    let mut matched = 0;
+    let total = outcome.frames.len();
+    for (i, f) in outcome.frames.iter().enumerate() {
+        let ref_png = dir.join(format!("ref_{i:03}.png"));
+        let ts = format!("{:.3}", f.t_ms as f64 / 1000.0);
+        let video_str = path_arg(&video);
+        let r = Command::new(ffmpeg_bin())
+            .args([
+                "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                "-i", &video_str,
+                "-ss", &ts,
+                "-frames:v", "1",
+            ])
+            .arg(&ref_png)
+            .output()
+            .expect("seek 抽取失败");
+        assert!(r.status.success(), "seek 抽取失败 t_ms={}", f.t_ms);
+
+        let a = sha256_of(&f.image_path);
+        let b = sha256_of(&ref_png);
+        let ok = a == b;
+        if ok { matched += 1; }
+        println!(
+            "frame[{i}] t_ms={:>5} | filter={} | seek@-t_ms={} | {}",
+            f.t_ms, &a[..12], &b[..12],
+            if ok { "MATCH ✅" } else { "DIFFER ❌" }
+        );
+    }
+    assert_eq!(
+        matched, total,
+        "filter t_ms 与按 t_ms 精确 seek 的画面不完全一致：{matched}/{total}"
     );
 }
