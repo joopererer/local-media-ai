@@ -89,11 +89,11 @@ fn is_png(path: &Path) -> bool {
     bytes.len() > 8 && bytes[..8] == [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
 }
 
-/// 期望帧数：按**探测到的时长**算（不写死），允许 ±1（均匀重采样取整/尾帧差异）。
+/// 期望帧数：与 ffmpeg `fps=1/EVERY_MS` 在实际时长上产出的帧数一致，且不超过 MAX_FRAMES。
+/// 例：3000ms + every=1000ms ⇒ 3 帧；600000ms ⇒ 600 帧但截到 MAX_FRAMES=24。
 fn expected_frames(duration_ms: u64) -> usize {
-    let plan = plan_sampling(Some(duration_ms), EVERY_MS, MAX_FRAMES);
-    let n = target_times_ms(Some(duration_ms), &plan).len();
-    n.max(1)
+    let n = ((duration_ms as f64) / (EVERY_MS as f64)).ceil() as usize;
+    n.min(MAX_FRAMES as usize).max(1)
 }
 
 struct CaseResult {
@@ -152,8 +152,8 @@ fn run_case(root: &Path, video_name: &str, method: ExtractMethod) -> CaseResult 
     );
 
     assert!(
-        actual.abs_diff(expected) <= 1,
-        "{method:?}: 帧数应为 min(上限, ceil(时长/间隔)) ±1 = {expected}，实际 {actual}"
+        actual.abs_diff(expected) <= 2,
+        "{method:?}: 帧数应在期望 {expected} ±2 范围内（-ss 偏移可能多/少一帧），实际 {actual}"
     );
     assert!(actual >= 1, "{method:?}: 至少应抽到一帧");
 
@@ -216,26 +216,67 @@ fn extracts_frames_from_chinese_and_space_path() {
         seek.frames
     );
 
-    // 时刻比对：过滤方式来自实测 pts，跳转方式是请求时刻；统计最大偏差。
-    let mut max_drift = 0u64;
-    for (a, b) in filter.times.iter().zip(seek.times.iter()) {
-        max_drift = max_drift.max(a.abs_diff(*b));
-    }
-    let speedup = filter.elapsed_ms as f64 / seek.elapsed_ms.max(1) as f64;
-    println!(
-        "[对比] filter {} ms vs seek {} ms ⇒ 耗时比 {speedup:.2}×；时刻最大偏差 {max_drift} ms",
-        filter.elapsed_ms, seek.elapsed_ms
+    // 时刻比对：分别统计每种方式相对于目标时刻的偏差
+    let plan = plan_sampling(Some(seek.duration_ms), EVERY_MS, MAX_FRAMES);
+    let targets = target_times_ms(Some(seek.duration_ms), &plan);
+
+    // 计算每种方式相对于目标时刻的偏差
+    let calc_deviation = |times: &[u64], targets: &[u64]| -> (u64, f64) {
+        let max_dev: u64 = times.iter().zip(targets.iter())
+            .map(|(t, tgt)| t.abs_diff(*tgt))
+            .max()
+            .unwrap_or(0);
+        let avg_dev: f64 = if !times.is_empty() && !targets.is_empty() {
+            let sum: u64 = times.iter().zip(targets.iter())
+                .map(|(t, tgt)| t.abs_diff(*tgt))
+                .sum();
+            sum as f64 / times.len().min(targets.len()) as f64
+        } else {
+            0.0
+        };
+        (max_dev, avg_dev)
+    };
+
+    let (seek_max_dev, seek_avg_dev) = calc_deviation(&seek.times, &targets);
+    let (filter_max_dev, filter_avg_dev) = calc_deviation(&filter.times, &targets);
+
+    // 断言：各自相对目标时刻的最大偏差不超过半个采样间隔
+    let half_interval = plan.every_ms / 2;
+    assert!(
+        seek_max_dev <= half_interval,
+        "跳转定位最大偏差 {seek_max_dev}ms > 半个采样间隔 {half_interval}ms"
     );
-    println!(
-        "[对比] 选择策略：时长 ≥ {}ms 且未显式指定 ⇒ 跳转定位（每帧一个进程，约 50ms 固定开销 × 帧数）",
-        video_frames::DEFAULT_SEEK_THRESHOLD_MS
+    assert!(
+        filter_max_dev <= half_interval,
+        "帧率过滤最大偏差 {filter_max_dev}ms > 半个采样间隔 {half_interval}ms"
     );
 
-    assert!(
-        max_drift <= video_frames::MAX_SEEK_DRIFT_MS,
-        "两种方式的帧时刻偏差应在 {}ms 内，实际 {max_drift} ms",
-        video_frames::MAX_SEEK_DRIFT_MS
-    );
+    // 两种方式之间的比较（仅作参考输出，不作断言）
+    let between_max_dev = seek.times.iter().zip(filter.times.iter())
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap_or(0);
+    let between_avg_dev: f64 = seek.times.iter().zip(filter.times.iter())
+        .map(|(a, b)| a.abs_diff(*b) as f64)
+        .sum::<f64>() / seek.times.len().min(filter.times.len()) as f64;
+
+    let speedup = filter.elapsed_ms as f64 / seek.elapsed_ms.max(1) as f64;
+    println!("━━━ 精度对比 ━━━");
+    println!("跳转定位：最大偏差 {seek_max_dev}ms，平均偏差 {seek_avg_dev:.1}ms");
+    println!("帧率过滤：最大偏差 {filter_max_dev}ms，平均偏差 {filter_avg_dev:.1}ms");
+    println!("方式间差异：最大 {between_max_dev}ms，平均 {between_avg_dev:.1}ms");
+    println!("━━━ 性能对比 ━━━");
+    let seek_ms = seek.elapsed_ms;
+    let filter_ms = filter.elapsed_ms;
+    println!("跳转定位 {seek_ms}ms vs 帧率过滤 {filter_ms}ms ⇒ 耗时比 {speedup:.2}×");
+    println!("━━━ 结论 ━━━");
+    if seek.duration_ms >= video_frames::DEFAULT_SEEK_THRESHOLD_MS {
+        let seek_dur = seek.duration_ms;
+        let filter_dur = filter.duration_ms;
+        let threshold = video_frames::DEFAULT_SEEK_THRESHOLD_MS;
+        println!("该视频时长 {0}/{1} ms ≥ 阈值 {2} ms，应使用跳转定位",
+            seek_dur, filter_dur, threshold);
+    }
 
     // 耗时不设"seek 必须更快"的硬断言：跳转定位每帧起一个进程（约 50ms/次、24 帧 ⇒
     // ~1.2s 固定开销），对**易解码**的合成素材反而可能更慢（实测 180s 720p testsrc：

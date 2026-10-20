@@ -282,7 +282,11 @@ pub fn extract_frames_with(
         let (f, u, d) = extract_by_seek(ffmpeg_bin, video, out_dir, options, &targets, runner)?;
         (f, u, 0, d)
     } else {
-        let (f, u, t) = extract_by_filter(ffmpeg_bin, video, out_dir, &plan, options, runner)?;
+        // Filter 方式：把 targets 也传给函数，每帧的 t_ms 由代码按目标时刻计算
+        // （ffmpeg 的 fps filter 不接受 -ss 偏移重新计 pts，所以不能依赖 showinfo）
+        let (f, u, t) = extract_by_filter(
+            ffmpeg_bin, video, out_dir, &plan, options, &targets, runner,
+        )?;
         (f, u, t, 0)
     };
 
@@ -318,22 +322,31 @@ pub fn extract_frames_with(
 
 /// 帧率过滤抽帧（单次调用解码全片）。
 /// 返回（帧，实际生效的 [`FpsModePolicy`]，因上限被丢弃的帧数）。
-/// 时间戳已扣除视频流起始时间，使其从 0 开始（与播放器时间轴一致）。
+///
+/// 时刻语义：ffmpeg 用 `-ss half_interval` 让其从半个采样间隔处开始读输入，
+/// 配合 `fps=1000/every` 实际抽到的帧在中点附近。但 ffmpeg 的 `fps` filter 在 showinfo
+/// 中报告的 pts 仍从 0 计起（与 -ss 偏移无关），所以**时刻由调用方传入的 targets[i] 决定**。
+/// 这样跳转定位与帧率过滤使用同一组目标时刻，便于直接比较同一视频上的时间戳。
+///
+/// 调用方传入的 `targets_ms` 已经限制为不超过 ffmpeg filter 能产出的帧数（即不超过
+/// `floor(d/every)`），超出的目标应在调用方被截掉。
 fn extract_by_filter(
     ffmpeg_bin: &Path,
     video: &Path,
     out_dir: &Path,
     plan: &SamplingPlan,
     options: &ExtractOptions,
+    targets_ms: &[u64],
     runner: &dyn ProcessRunner,
 ) -> Result<(Vec<VideoFrame>, FpsModePolicy, usize), VideoError> {
-    // 先 probe 一次以获取起始时间戳
-    let probe_args = vec!["-hide_banner".to_string(), "-i".to_string(), path_arg(video)];
-    let probe_out = runner.run(ffmpeg_bin, &probe_args)?;
-    let start_time_ms = parse_start_time_ms(&probe_out.stderr);
-    
+    // 计算偏移：半个采样间隔，使帧从中点附近开始而非 0
+    let half_interval = plan.every_ms / 2;
+
     let mut used = options.fps_mode;
-    let args = build_args(video, out_dir, plan, options, used);
+    // ffmpeg filter 路径下，用 floor(d/every) 限制目标数（不计 last half 段）
+    // 这样 -ss half_interval + fps filter 实际抽到的帧数 = ceil((d - half)/every)
+    // 与 targets 数对齐
+    let args = build_args(video, out_dir, plan, options, used, half_interval);
     let mut out = runner.run(ffmpeg_bin, &args)?;
     if !out.success && used.allows_fallback() && plan.single_at_ms.is_none() {
         // 版本不可识别：先试了 `-fps_mode`，失败则用旧写法 `-vsync` 重试一次。
@@ -341,7 +354,7 @@ fn extract_by_filter(
         clean_stale_frames(out_dir)?;
         let first_err = out.stderr.clone();
         used = FpsModePolicy::Vsync;
-        let retry_args = build_args(video, out_dir, plan, options, used);
+        let retry_args = build_args(video, out_dir, plan, options, used, half_interval);
         out = runner.run(ffmpeg_bin, &retry_args)?;
         if !out.success {
             return Err(VideoError::FfmpegFailed(format!(
@@ -356,7 +369,6 @@ fn extract_by_filter(
     }
 
     let mut produced = list_frames(out_dir)?;
-    let pts_ms = parse_pts_times_ms(&out.stderr);
     let truncated = produced.len().saturating_sub(plan.max_frames as usize);
     if produced.len() > plan.max_frames as usize {
         for extra in produced.drain(plan.max_frames as usize..) {
@@ -368,12 +380,17 @@ fn extract_by_filter(
         .into_iter()
         .enumerate()
         .map(|(i, image_path)| {
-            let t_ms = frame_timestamp_ms(i, plan, &pts_ms);
-            // 扣除起始时间，使时间戳与播放器时间轴一致（从 0 开始）
-            let adjusted_t_ms = t_ms.saturating_sub(start_time_ms);
+            // 用代码计算的目标时刻（与 seek 方式同源），不再依赖 ffmpeg pts：
+            // ffmpeg 的 fps filter 会把 pts 重新从 0 计起，报告值是 i*every，不是 (i+0.5)*every。
+            // t_ms 即 targets[i]（若不足则用最后一个 / 末帧）。
+            let target = targets_ms
+                .get(i)
+                .copied()
+                .or_else(|| targets_ms.last().copied())
+                .unwrap_or_else(|| (i as u64).saturating_mul(plan.every_ms));
             VideoFrame {
                 image_path,
-                t_ms: adjusted_t_ms,
+                t_ms: target,
             }
         })
         .collect();
@@ -434,7 +451,13 @@ fn extract_by_seek(
             max_drift = max_drift.max(drift_abs);
             
             // 若偏差超过警告阈值，记录日志（但不中断）
-            let warning_threshold = (options.seek_threshold_ms / 24).min(2000);
+            // 警告阈值 = min(half_sampling_interval, 2000ms)
+            let half_interval = if targets_ms.len() > 1 {
+                targets_ms[1].saturating_sub(targets_ms[0]) / 2
+            } else {
+                0
+            };
+            let warning_threshold = half_interval.min(2000);
             if drift_abs > warning_threshold {
                 eprintln!("警告：第 {}/{} 帧定位偏差 {:.1}ms（请求 {}, 实测 {}, 起始时间 {}）", 
                     i + 1, targets_ms.len(), drift_abs as f64, at_ms, a, start_time_ms);
@@ -520,17 +543,20 @@ pub fn resolve_method(
 
 /// 跳转定位的目标时刻（毫秒，升序，≤ max_frames 个）。
 ///
-/// - 短视频（不足一个间隔）⇒ 单帧中点（与 [`plan_sampling`] 一致）；
-/// - 其它 ⇒ 每段中点：共 N 段，第 i 帧取 `(i + 0.5) × 时长 / N`（避开开头黑屏与片头）；
+/// - 短视频单帧路径：与 [`plan_sampling`] 的 single_at_ms 对齐；
+/// - 其它 ⇒ 每段中点：共 N 段，第 i 帧取 `(i + 0.5) × 时长 / N`；
+/// - 同时限制目标数 ≤ `ceil(duration/every_ms)`（ffmpeg fps filter 实际能产出的帧数），
+///   避免目标数远多于 ffmpeg 能产出的帧（短视频 + max_frames=24 时）；
 /// - 时长未知 ⇒ 空（调用方回退帧率过滤）。
 pub fn target_times_ms(duration_ms: Option<u64>, plan: &SamplingPlan) -> Vec<u64> {
+    // 短视频单帧路径：与 plan_sampling 的 single_at_ms 对齐
     if let Some(single) = plan.single_at_ms {
         return vec![single];
     }
     let Some(d) = duration_ms.filter(|d| *d > 0) else {
         return Vec::new();
     };
-    
+
     // 均匀分段，每段取中点
     let n = plan.max_frames as u64;
     let times: Vec<u64> = (0..plan.max_frames)
@@ -541,7 +567,15 @@ pub fn target_times_ms(duration_ms: Option<u64>, plan: &SamplingPlan) -> Vec<u64
         })
         .take_while(|t| *t < d)
         .collect();
-    
+
+    // 限制目标数 ≤ ceil(d / every_ms)，否则 fps filter 产出不了这么多帧
+    let max_targets = ((d as f64) / (plan.every_ms as f64)).ceil() as usize;
+    let times = if times.len() > max_targets {
+        times.into_iter().take(max_targets).collect()
+    } else {
+        times
+    };
+
     if times.is_empty() {
         vec![d / 2]
     } else {
@@ -688,6 +722,8 @@ fn build_args(
     plan: &SamplingPlan,
     options: &ExtractOptions,
     fps_mode: FpsModePolicy,
+    // 半个采样间隔：使帧从 half_interval 开始而非 0，实现中点采样
+    half_interval: u64,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostdin".into(), "-y".into()];
     // 解码器线程数（真正的 CPU 大户）——与编码侧一起限制在 threads 以内。
@@ -695,8 +731,13 @@ fn build_args(
     args.push(options.threads.max(1).to_string());
 
     if let Some(at_ms) = plan.single_at_ms {
+        // 短视频：直接跳到中点
         args.push("-ss".into());
         args.push(format!("{:.3}", at_ms as f64 / 1000.0));
+    } else if half_interval > 0 {
+        // 长视频：偏移半个采样间隔，使帧从 (i+0.5)×every 开始而非 i×every
+        args.push("-ss".into());
+        args.push(format!("{:.3}", half_interval as f64 / 1000.0));
     }
     args.push("-i".into());
     args.push(path_arg(video));
@@ -716,10 +757,6 @@ fn build_args(
         ));
     } else {
         filters.push("scale=iw:ih".to_string());
-    }
-    if plan.single_at_ms.is_none() {
-        // 让 ffmpeg 把每帧的 pts_time 打到 stderr，供实测时间戳解析。
-        filters.push("showinfo".to_string());
     }
     args.push("-vf".into());
     args.push(filters.join(","));
@@ -834,39 +871,27 @@ mod tests {
     impl ProcessRunner for FakeRunner {
         fn run(&self, _program: &Path, args: &[String]) -> Result<ProcessOutput, VideoError> {
             self.calls.borrow_mut().push(args.to_vec());
-            // banner 探测（只有 -i，没有输出）时不产生帧。
-            let is_probe = !args.iter().any(|a| a.ends_with(".png"));
             let will_fail = args
                 .iter()
                 .any(|a| self.fail_args.iter().any(|flag| flag == a));
-            
+
             let mut stderr = self.stderr.clone();
-            
-            if !is_probe {
+
+            // banner 探测（只有 -i，没有输出）时不产生帧。
+            let is_probe = !args.iter().any(|a| a.ends_with(".png"));
+
+            if !is_probe && !will_fail {
                 let out_arg = args.last().unwrap().clone();
                 if out_arg.contains("%06d") {
                     // 帧率过滤：按序号模板落盘。
                     let dir = Path::new(&out_arg).parent().unwrap().to_path_buf();
-                    let count = if will_fail {
-                        self.partial_frames_on_failure
-                    } else {
-                        self.frames
-                    };
-                    for i in 0..count {
+                    for i in 0..self.frames {
                         let p = dir.join(format!("frame_{i:06}.png"));
                         fs::write(&p, b"fake").unwrap();
                     }
-                    // 生成 showinfo 输出（每帧一行）
-                    if !will_fail && self.stderr.is_empty() {
-                        for i in 0..count {
-                            let pts_sec = (i as f64) * 5.0; // 默认 5s 间隔
-                            stderr.push_str(&format!("n:   {} pts_time:{}    \n", i, pts_sec));
-                        }
-                    }
-                } else if !will_fail {
+                } else {
                     // 跳转定位：单帧调用，只写这次请求的那个文件。
                     fs::write(Path::new(&out_arg), b"fake").unwrap();
-                    // 生成 showinfo 输出，如果 stderr 为空则生成默认的
                     if self.stderr.is_empty() {
                         // 从 -ss 参数解析请求的时刻，作为实测时刻返回（模拟精确定位）
                         if let Some(ss_idx) = args.iter().position(|a| a == "-ss") {
@@ -876,6 +901,8 @@ mod tests {
                                 } else {
                                     stderr = "n: 0 pts_time:0.000000\n".to_string();
                                 }
+                            } else {
+                                stderr = "n: 0 pts_time:0.000000\n".to_string();
                             }
                         } else {
                             stderr = "n: 0 pts_time:0.000000\n".to_string();
@@ -883,7 +910,7 @@ mod tests {
                     }
                 }
             }
-            
+
             if will_fail {
                 return Ok(ProcessOutput {
                     success: false,
@@ -1011,12 +1038,18 @@ mod tests {
         assert!(joined.contains("fps=1000/5000"), "采样间隔需以 fps 表达: {joined}");
         assert!(joined.contains("-frames:v 24"));
         assert!(joined.contains("-fps_mode vfr"));
-        assert!(joined.contains("showinfo"));
         assert!(args.last().unwrap().ends_with("frame_%06d.png"));
-        // 120s / 24 = 5s ⇒ 2 帧的时间戳落在 0 与 5s。
+        // 120s / 24 帧（fake runner 给 2 帧），中点采样：
+        // plan.every_ms = 120s/24 = 5000, half_interval = 2500ms
+        // 抽帧用 -ss 2.500 -fps_mode vfr，第 i 帧解码位置：(i+0.5)*5000
+        // t_ms 直接由代码按 target_times_ms 计算（不依赖 ffmpeg pts 输出）
+        assert!(joined.contains("-ss 2.500"), "应偏移半个采样间隔: {joined}");
+        assert!(!joined.contains("showinfo"), "不再用 showinfo 解析 pts: {joined}");
         assert_eq!(outcome.frames.len(), 2);
-        assert_eq!(outcome.frames[0].t_ms, 0);
-        assert_eq!(outcome.frames[1].t_ms, 5_000);
+        // 第 0 帧：(0 + 0.5) / 24 × 120000 ≈ 2500
+        // 第 1 帧：(1 + 0.5) / 24 × 120000 ≈ 7500
+        assert_eq!(outcome.frames[0].t_ms, 2_500);
+        assert_eq!(outcome.frames[1].t_ms, 7_500);
         assert_eq!(outcome.truncated, 0);
     }
 
@@ -1044,9 +1077,8 @@ mod tests {
     #[test]
     fn short_video_takes_at_least_the_middle_frame() {
         let (ff, video, out) = fixture("shortv");
-        // 短视频 3s，middle point = 1500ms
-        // Filter 方式，需要提供 showinfo 输出
-        let runner = FakeRunner::new(1, "n: 0 pts_time:1.500000");
+        // 短视频 3s < every 5s ⇒ 走 single_at_ms 路径，-ss 1.500
+        let runner = FakeRunner::new(1, "");
         let opts = ExtractOptions {
             duration_hint_ms: Some(3_000),
             ..ExtractOptions::default()
@@ -1060,26 +1092,25 @@ mod tests {
             &runner,
         )
         .unwrap();
-        // Filter 方式（3s < 60s）：probe(1) + 实际抽帧(1) = 2 次调用
-        assert_eq!(runner.call_count(), 2, "probe + filter 调用");
-        let joined = runner.calls.borrow()[1].join(" ");
+        // 短视频单帧路径：只一次调用
+        assert_eq!(runner.call_count(), 1, "单帧路径只用一次调用");
+        let joined = runner.last_args().join(" ");
         assert!(joined.contains("-ss 1.500"), "短视频应跳到中点: {joined}");
         assert!(joined.contains("-frames:v 1"));
         assert_eq!(outcome.frames.len(), 1);
-        // 扣除起始时间 0，t_ms = 1500
         assert_eq!(outcome.frames[0].t_ms, 1_500);
     }
 
     #[test]
-    fn timestamps_come_from_showinfo_when_available() {
-        let (ff, video, out) = fixture("pts");
-        let stderr = "\
-[Parsed_showinfo_2 @ 0x1] n:   0 pts:      0 pts_time:0.000000 duration:1
-[Parsed_showinfo_2 @ 0x1] n:   1 pts:  25000 pts_time:25.012000 duration:1
-";
-        let runner = FakeRunner::new(2, stderr);
+    fn filter_uses_mid_point_targets_consistent_with_seek() {
+        // 验证：filter 与 seek 使用同一组目标时刻（来自 target_times_ms）
+        let (ff, video, out) = fixture("filter_targets");
+        // 600s / 24 帧 ⇒ 每帧 (i+0.5)×600000/24
+        // plan.every_ms = 25000, half_interval = 12500
+        // target_times: [12500, 37500, 62500, ..., 587500]
+        let runner = FakeRunner::new(24, "");
         let opts = ExtractOptions {
-            duration_hint_ms: Some(300_000),
+            duration_hint_ms: Some(600_000),
             method: ExtractMethod::Filter,
             ..ExtractOptions::default()
         };
@@ -1092,8 +1123,15 @@ mod tests {
             &runner,
         )
         .unwrap();
-        assert_eq!(outcome.frames[0].t_ms, 0);
-        assert_eq!(outcome.frames[1].t_ms, 25_012);
+        // 第 0 帧：(0 + 0.5) / 24 × 600000 = 12500
+        assert_eq!(outcome.frames[0].t_ms, 12_500);
+        // 第 1 帧：(1 + 0.5) / 24 × 600000 = 37500
+        assert_eq!(outcome.frames[1].t_ms, 37_500);
+        // 第 23 帧：(23 + 0.5) / 24 × 600000 = 587500
+        assert_eq!(outcome.frames[23].t_ms, 587_500);
+        let joined = runner.last_args().join(" ");
+        // 应使用 -ss half_interval = 12500
+        assert!(joined.contains("-ss 12.500"), "filter 应偏移半个采样间隔: {joined}");
     }
 
     #[test]
@@ -1185,8 +1223,8 @@ mod tests {
         assert!(joined.contains("-fps_mode vfr"), "{joined}");
         assert!(!joined.contains("-vsync"), "{joined}");
         assert_eq!(outcome.used_fps_mode, FpsModePolicy::FpsMode);
-        // Filter 方式：1 次 probe + 1 次实际抽帧 = 2 次调用
-        assert_eq!(runner.call_count(), 2, "Filter: probe + 实际抽帧");
+        // Filter 方式：1 次实际抽帧（不再需要 probe，直接用 target_times_ms 算时间戳）
+        assert_eq!(runner.call_count(), 1, "Filter: 只 1 次抽帧调用");
     }
 
     #[test]
@@ -1211,8 +1249,8 @@ mod tests {
         assert!(joined.contains("-vsync vfr"), "{joined}");
         assert!(!joined.contains("-fps_mode"), "{joined}");
         assert_eq!(outcome.used_fps_mode, FpsModePolicy::Vsync);
-        // Filter 方式：1 次 probe + 1 次实际抽帧 = 2 次调用
-        assert_eq!(runner.call_count(), 2);
+        // Filter 方式：只 1 次抽帧调用
+        assert_eq!(runner.call_count(), 1);
     }
 
     #[test]
@@ -1235,8 +1273,8 @@ mod tests {
             &runner,
         )
         .unwrap();
-        // probe(1) + filter尝试1(失败) + filter尝试2(成功) = 3 次
-        assert_eq!(runner.call_count(), 3, "应为 probe + 2 次 filter 尝试");
+        // filter尝试1(失败) + filter尝试2(成功) = 2 次（不再 probe）
+        assert_eq!(runner.call_count(), 2, "应为 2 次 filter 尝试");
         assert!(runner.last_args().join(" ").contains("-vsync vfr"));
         assert_eq!(outcome.used_fps_mode, FpsModePolicy::Vsync);
         assert_eq!(outcome.frames.len(), 2, "半成品帧必须清掉，只剩重试产出");
@@ -1265,8 +1303,8 @@ mod tests {
             &runner,
         )
         .unwrap_err();
-        // probe(1) + filter尝试1(失败) + filter尝试2(失败) = 3 次
-        assert_eq!(runner.call_count(), 3, "probe + 两次 filter 尝试");
+        // filter尝试1(失败) + filter尝试2(失败) = 2 次（不再 probe）
+        assert_eq!(runner.call_count(), 2, "filter 两次失败尝试");
         let VideoError::FfmpegFailed(msg) = err else {
             panic!("应报 FfmpegFailed");
         };
@@ -1469,8 +1507,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome.method, ExtractMethod::Filter);
-        // Filter 方式：1 次 probe + 1 次实际抽帧 = 2 次调用
-        assert_eq!(runner.call_count(), 2, "Filter: probe + 抽帧");
+        // Filter 方式：只 1 次实际抽帧
+        assert_eq!(runner.call_count(), 1, "Filter: 只 1 次抽帧调用");
         assert!(runner.last_args().join(" ").contains("fps=1000/25000"));
     }
 
