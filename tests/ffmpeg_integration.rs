@@ -242,8 +242,8 @@ fn extracts_frames_from_chinese_and_space_path() {
     // 27.4 时刻语义复核：
     // - Seek 路径：t_ms 是代码算的目标时刻（即 target_times_ms 的 mid-point），
     //   偏差仅来自 ffmpeg 落点（应 ≤ 半间隔）。
-    // - Filter 路径：t_ms 来自 showinfo 的**实测** pts（扣 start），不再与
-    //   target_times_ms 对齐；偏差按"实测 pts vs 每个采样间隔的下边界"度量。
+    // - Filter 路径：t_ms 来自 showinfo 的**实测** pts（扣 start），输入偏移 half_interval
+    //   使首帧避开 0 秒；t_ms 相对中点目标的偏差应 ≤ 半间隔（与 seek 一致）。
     let calc_max_dev = |times: &[u64], targets: &[u64]| -> u64 {
         times.iter().zip(targets.iter())
             .map(|(t, tgt)| t.abs_diff(*tgt))
@@ -258,27 +258,11 @@ fn extracts_frames_from_chinese_and_space_path() {
         plan.every_ms / 2
     );
 
-    // 关键断言 1（filter 路径）：每个 t_ms 都恰落在 i×every 位置附近（≤ 半间隔）。
-    // —— 这是 27.4 复核要保证的事：实测 PTS = 整 every 倍，而非"中点"。
-    let boundary_max: u64 = (0..filter.times.len())
-        .map(|i| filter.times[i].abs_diff(i as u64 * plan.every_ms))
-        .max()
-        .unwrap_or(0);
+    let filter_max_dev = calc_max_dev(&filter.times, &targets);
     assert!(
-        boundary_max <= plan.every_ms / 2,
-        "filter 路径：实测 pts 应在 i×every 附近（实测 vs 边界 max={boundary_max}ms, 容许 ≤{half}ms）",
-        half = plan.every_ms / 2
-    );
-
-    // 关键断言 2（seek 路径）：t_ms 应在代码目标中点的 ±every 范围（ffmpeg 落点偏差+ 关键帧布局决定）。
-    let seek_within_interval_max: u64 = (0..seek.times.len())
-        .map(|i| seek.times[i].abs_diff(*targets.get(i).unwrap_or(&0)))
-        .max()
-        .unwrap_or(0);
-    assert!(
-        seek_within_interval_max <= plan.every_ms,
-        "seek 路径：t_ms 应在请求点 ± 一个采样间隔（实测偏差 max={seek_within_interval_max}ms, 容许 ≤{}ms）",
-        plan.every_ms
+        filter_max_dev <= plan.every_ms / 2,
+        "filter 路径最大偏差 {filter_max_dev}ms > 半采样间隔 {}ms",
+        plan.every_ms / 2
     );
 
     // 耗时输出（不设硬断言，详见 extract_by_seek 的实测记录）。
@@ -286,9 +270,9 @@ fn extracts_frames_from_chinese_and_space_path() {
         .map(|(a, b)| a.abs_diff(*b))
         .max()
         .unwrap_or(0);
-    println!("━━━ 时刻对比（27.4 复核后）━━━");
-    println!("seek vs mid ± half：max {}ms（应 ≤ 半间隔）", seek_within_interval_max);
-    println!("filter vs i×every boundary：max {boundary_max}ms（应 ≤ 半间隔）");
+    println!("━━━ 时刻对比（27.4 复核后：filter 加输入偏移）━━━");
+    println!("seek vs mid ± half：max {seek_max_dev}ms（应 ≤ 半间隔）");
+    println!("filter vs mid ± half：max {filter_max_dev}ms（应 ≤ 半间隔）");
     println!("方式间偏差：max {between_max_dev}ms（仅参考）");
     println!("━━━ 性能对比 ━━━");
     println!("跳转定位 {}ms vs 帧率过滤 {}ms", seek.elapsed_ms, filter.elapsed_ms);

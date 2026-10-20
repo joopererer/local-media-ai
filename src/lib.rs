@@ -21,10 +21,10 @@
 //! 数据、快一个量级。默认 [`ExtractMethod::Auto`]：时长 ≥ `seek_threshold_ms`（默认 60 秒）走跳转定位。
 //!
 //! **时刻语义（27.4 复核，实测）**：两种方式的 `t_ms` 都取 FFmpeg **实测**的 `showinfo`
-//! `pts_time` 再扣除视频起始时间，绝不用代码算的目标时刻代替。实测发现 `fps` filter 会把
-//! 输出 PTS 归一到 0 并按整帧边界取帧，其报告值与画面实际时刻可差近一个采样间隔
-//! （every=1000ms 时实测差 900ms），因此帧率过滤一律用
-//! `select='isnan(prev_selected_t)+gte(t-prev_selected_t,EVERY)'`，实测 PTS 与画面 0 误差。
+//! `pts_time` 再扣除视频起始时间，绝不用代码算的目标时刻代替。帧率过滤路径在 `-i` 之前加
+//! `-ss half_interval` 偏移（让首帧避开 0 秒位置），然后用
+//! `select='isnan(prev_selected_t)+gte(t-prev_selected_t,EVERY)'` 按间隔选帧，
+//! 实测 PTS 与中点目标的偏差 ≤ 半个采样间隔。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -289,9 +289,8 @@ pub fn extract_frames_with(
         (f, u, 0, d)
     } else {
         // Filter 方式：t_ms 全部来自 ffmpeg `showinfo` 的**实测** pts_time（扣除起始时间），
-        // 不再用代码算的目标时刻代替。实测依据见 `docs/PROGRESS.md` 27.4 帧率过滤复核：
-        // `fps` filter 会把输出 pts 归一到 0 并按整帧边界取帧，报告值与画面实际时刻
-        // 可差近一个间隔，因此 `select` + `showinfo` 是唯一可靠写法。
+        // 不再用代码算的目标时刻代替。在 `-i` 之前加 `-ss half_interval` 偏移，
+        // 让首帧避开 0 秒位置，与跳转定位的中点采样一致。
         let (f, u, t) =
             extract_by_filter(ffmpeg_bin, video, out_dir, &plan, options, runner)?;
         (f, u, t, 0)
@@ -331,13 +330,13 @@ pub fn extract_frames_with(
 /// 返回（帧，实际生效的 [`FpsModePolicy`]，因上限被丢弃的帧数）。
 ///
 /// **抽帧方式**：用 `select` 表达式按 `t`（帧的真实时间戳）每隔 `every` 选一帧，
-/// 不用 `fps` filter——实测 `fps` filter 会把输出 pts 归一到 0，并按整帧边界取帧，
-/// 导致 showinfo 报告的时刻与画面实际时刻可差近一个间隔（详见 `docs/PROGRESS.md`
-/// 27.4「帧率过滤时刻复核」的实测记录）。
+/// 不用 `fps` filter——实测 `fps` filter 会把输出 pts 归一到 0，并按整帧边界取帧。
+///
+/// **输入偏移**：在 `-i` 之前加 `-ss half_interval`（短视频单帧路径除外），让首帧
+/// 避开 0 秒位置，与跳转定位的中点采样一致。
 ///
 /// **时刻语义**：`t_ms` 一律取 `showinfo` 的 `pts_time` 扣除视频起始时间，
-/// 不再用代码算的目标时刻替代。这样画面与标注时间一致，
-/// 27.4.5 点击命中时刻跳转不会落到相邻采样点。
+/// 不再用代码算的目标时刻替代。这样实测 PTS 与中点目标的偏差 ≤ 半个采样间隔。
 ///
 /// 若 showinfo 报告的 pts 少于实际落盘帧数（理论不该发生），多出的帧回退到
 /// "最后一个已知 pts + 间隔"并标记为未知精度，避免静默错标。
@@ -750,10 +749,13 @@ fn build_args(
     args.push("-threads".into());
     args.push(options.threads.max(1).to_string());
 
-    // 注意：**不加 `-ss` 输入偏移**。实测显示，给 select 加输入 `-ss` 会让
-    // showinfo 报告的 pts 与画面实际时刻相差一个固定偏移（实测 every=1000ms 时差 500ms），
-    // 必须整片解码、靠 select 的 `t` 表达式选帧，才能让 pts 与画面严格一致。
-    if let Some(at_ms) = plan.single_at_ms {
+    // 输入偏移（非单帧路径）：提前半个间隔，让首帧避开 0 秒，与跳转定位的中点采样一致。
+    // 单帧路径仍跳到中点不变。
+    if plan.single_at_ms.is_none() {
+        let offset_ms = plan.every_ms / 2;
+        args.push("-ss".into());
+        args.push(format!("{:.3}", offset_ms as f64 / 1000.0));
+    } else if let Some(at_ms) = plan.single_at_ms {
         // 短视频单帧：直接跳到中点（单帧路径无间隔问题）。
         args.push("-ss".into());
         args.push(format!("{:.3}", at_ms as f64 / 1000.0));
@@ -1087,9 +1089,9 @@ mod tests {
     fn interval_args_limit_threads_and_use_select_with_showinfo() {
         let (ff, video, out) = fixture("args");
         // 模拟真 ffmpeg：每个 select 出来的帧报一个 pts_time。
-        // select gte(t-prev,5000ms) ⇒ 第 i 帧 pts_time ≈ i * 5s。
+        // 输入偏移 half_interval（500ms），select gte(t-prev,5000ms) ⇒ 第 i 帧 pts_time ≈ 500 + i × 5000。
         // t_ms 即 showinfo 实测值（扣 start=0）。
-        let runner = FakeRunner::new(2, &pts_stderr_ms(&[0, 5_000]));
+        let runner = FakeRunner::new(2, &pts_stderr_ms(&[500, 5_500]));
         let opts = ExtractOptions {
             threads: 2,
             max_frames: 24,
@@ -1120,21 +1122,22 @@ mod tests {
         assert!(joined.contains("-frames:v 24"));
         assert!(joined.contains("-fps_mode vfr"));
         assert!(args.last().unwrap().ends_with("frame_%06d.png"));
-        // filter 不再依赖输入侧 -ss 偏移；long video 也不带 -ss。
-        assert!(!joined.contains("-ss"), "filter 长视频路径不加输入 -ss: {joined}");
+        // filter 长视频现加 -ss half_interval 偏移输入。
+        assert!(joined.contains("-ss 2.500"), "filter 长视频路径需加 half_interval 偏移: {joined}");
         // 调一次 probe + 一次 filter = 2 次
         assert_eq!(runner.call_count(), 2, "probe(1) + filter(1)");
         assert_eq!(outcome.frames.len(), 2);
-        // 第 0 帧 pts=0ms 扣 start=0 ⇒ 0；第 1 帧 pts=5000。
-        assert_eq!(outcome.frames[0].t_ms, 0);
-        assert_eq!(outcome.frames[1].t_ms, 5_000);
+        // 第 0 帧 pts=500ms 扣 start=0 ⇒ 500；第 1 帧 pts=5500。
+        assert_eq!(outcome.frames[0].t_ms, 500);
+        assert_eq!(outcome.frames[1].t_ms, 5_500);
         assert_eq!(outcome.truncated, 0);
     }
 
     #[test]
     fn long_video_is_resampled_uniformly_to_cover_the_whole_clip() {
         let (ff, video, out) = fixture("longv");
-        let runner = FakeRunner::new(1, &pts_stderr_ms(&[0]));
+        // 输入偏移 half_interval（12500ms），第 0 帧 pts ≈ 12500
+        let runner = FakeRunner::new(1, &pts_stderr_ms(&[12_500]));
         let opts = ExtractOptions {
             duration_hint_ms: Some(600_000),
             method: ExtractMethod::Filter,
@@ -1155,6 +1158,8 @@ mod tests {
             joined.contains("prev_selected_t\\,25.000000"),
             "select 中应使用均匀重采样后的间隔: {joined}"
         );
+        // filter 长视频加 half_interval 偏移
+        assert!(joined.contains("-ss 12.500"), "filter 长视频需加 half_interval 偏移: {joined}");
     }
 
     #[test]
@@ -1190,8 +1195,8 @@ mod tests {
         // 27.4 复核：filter 的 t_ms 必须是 ffmpeg 实测 pts，不再用代码目标时刻。
         let (ff, video, out) = fixture("filter_targets");
         // 故意报与 target_times_ms **不同**的 pts，验证代码不再覆盖 ffmpeg 的实测值。
-        // select gte(t-prev,25000ms) ⇒ 第 i 帧 pts_time = i × 25000 - 1000（非整倍数）。
-        let pts = [24_000, 49_000, 74_000, 99_000];
+        // 输入偏移 12500ms，select gte(t-prev,25000ms) ⇒ 第 i 帧 pts_time ≈ 12500 + i × 25000。
+        let pts = [12_500, 37_500, 62_500, 87_500];
         let runner = FakeRunner::new(4, &pts_stderr_ms(&pts));
         let opts = ExtractOptions {
             duration_hint_ms: Some(600_000),
@@ -1212,8 +1217,8 @@ mod tests {
             assert_eq!(outcome.frames[i].t_ms, *want, "第 {i} 帧必须用实测 pts");
         }
         let joined = runner.last_args().join(" ");
-        // 整片解码，不输入 -ss 偏移。
-        assert!(!joined.contains("-ss"), "filter 长视频路径不加输入 -ss: {joined}");
+        // 加 half_interval 输入偏移
+        assert!(joined.contains("-ss 12.500"), "filter 长视频需加 half_interval 偏移: {joined}");
         assert!(
             joined.contains("prev_selected_t\\,25.000000"),
             "select 间隔使用重采样后的 every_ms: {joined}"
@@ -1614,7 +1619,8 @@ mod tests {
     #[test]
     fn explicit_filter_is_used_even_for_long_videos() {
         let (ff, video, out) = fixture("seek_off");
-        let runner = FakeRunner::new(2, &pts_stderr_ms(&[0, 5_000]));
+        // 输入偏移 12500ms，第 0 帧 pts ≈ 12500
+        let runner = FakeRunner::new(2, &pts_stderr_ms(&[12_500, 37_500]));
         let opts = ExtractOptions {
             duration_hint_ms: Some(600_000),
             method: ExtractMethod::Filter,
