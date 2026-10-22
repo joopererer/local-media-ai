@@ -9,7 +9,7 @@
 //! 运行（PowerShell）：
 //! ```powershell
 //! $env:FO_FFMPEG_BIN = 'D:\ffmpeg\bin\ffmpeg.exe'
-//! $env:FO_TEST_VIDEO = 'D:\test\素材 测试.mp4'   # 可选：换成你的长视频
+//! $env:FO_TEST_VIDEO = '$HOME/videos/sample.mp4'   # 可选：换成你的长视频
 //! cargo test -p video_frames --test ffmpeg_integration -- --ignored --nocapture --test-threads=1
 //! ```
 //!
