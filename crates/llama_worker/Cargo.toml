@@ -1,0 +1,17 @@
+[package]
+name = "llama_worker"
+version.workspace = true
+edition.workspace = true
+description = "27.5: llama.cpp embedding worker (stdio frames). Talks to fo_core router only."
+
+[[bin]]
+name = "llama-embed-worker"
+path = "src/main.rs"
+
+[dependencies]
+embed_core = { path = "../embed_core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+# 27.5: 导入库由打包脚本生成（scripts/llama/*.def + .lib），build.rs 只做链接搜索。
