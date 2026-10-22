@@ -1,4 +1,4 @@
-//! 27.5：工作进程 stdio 帧编解码（主进程 router 与 `fo-llama-worker` 共用）。
+//! 27.5：工作进程 stdio 帧编解码（主进程 router 与 `llama-embed-worker` 共用）。
 //!
 //! 帧（小端）：`[len u32][req_id u64][kind u8][payload]`，`len` = 其后字节数。
 //! kind：1=hello、2=text、3=image、4=shutdown、5=cancel。
