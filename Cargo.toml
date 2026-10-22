@@ -5,7 +5,7 @@ edition.workspace = true
 description = "27.5: llama.cpp embedding worker (stdio frames). Talks to fo_core router only."
 
 [[bin]]
-name = "fo-llama-worker"
+name = "llama-embed-worker"
 path = "src/main.rs"
 
 [dependencies]

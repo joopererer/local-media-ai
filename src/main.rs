@@ -1,6 +1,6 @@
-//! 27.5: `fo-llama-worker` —— llama.cpp 嵌入工作进程（stdio 帧服务）。
+//! 27.5: `llama-embed-worker` —— llama.cpp 嵌入工作进程（stdio 帧服务）。
 //!
-//! 用法：`fo-llama-worker --model <gguf> --mmproj <mmproj> [--gpu-layers 99]`
+//! 用法：`llama-embed-worker --model <gguf> --mmproj <mmproj> [--gpu-layers 99]`
 //! stdin 读 [`Request`] 帧，stdout 写响应帧，日志全部走 stderr（另可重定向到文件）。
 //! 图片输入为主进程预处理后的 `SharedPixels`（h×w×3 RGB），不走 PNG 编解码。
 //!
@@ -18,7 +18,7 @@ mod llama_impl;
 const BACKEND_TAG: &str = "b11669";
 
 fn usage() -> ! {
-    eprintln!("用法: fo-llama-worker --model <gguf> --mmproj <mmproj> [--gpu-layers 99]");
+    eprintln!("用法: llama-embed-worker --model <gguf> --mmproj <mmproj> [--gpu-layers 99]");
     std::process::exit(2);
 }
 
