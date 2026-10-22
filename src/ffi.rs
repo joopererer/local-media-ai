@@ -1,12 +1,12 @@
 //! 27.5 §10-2：llama.cpp C ABI 最小绑定（b11669，EmbeddingGemma-2 嵌入路径专用）。
 //!
-//! 只声明本 worker 实际调用的函数（调用序列复刻 `D:/test/llama/gemma_probe.cpp`）。
+//! 只声明本 worker 实际调用的函数（调用序列复刻 llama.cpp 官方示例（`gemma_probe.cpp`））。
 //! 结构体按 `include/llama.h` / `tools/mtmd/mtmd.h` 的字段顺序手写。
 //!
 //! **布局校验**：`build.rs` 在有头文件时（`FO_LLAMA_SRC`）编译一个 C 断言程序，
 //! 比对 `sizeof(llama_model_params/context_params/mtmd_context_params)` 与本文件的
 //! `assert_layout!` 期望；不一致则构建失败（防止 pin 漂移导致 ABI 错位）。
-//! 链接：build.rs 按 `FO_LLAMA_LIB_DIR`（或 `D:/test/llama`）找 `llama.lib` /
+//! 链接：build.rs 按 `FO_LLAMA_LIB_DIR`找 `llama.lib` /
 //! `mtmd.lib` / `ggml.lib`（打包脚本生成，见 `scripts/fetch_llama_runtime.ps1`）。
 
 #![allow(non_camel_case_types)]
