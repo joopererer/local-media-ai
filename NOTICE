@@ -1,0 +1,52 @@
+local-media-ai
+Copyright 2026 Jiawei LI
+
+This product includes software developed as part of the local-media-ai project
+(https://github.com/joopererer/local-media-ai).
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full license text.
+
+The crates in this repository were originally developed inside the File Organizer
+project (https://github.com/joopererer/file_organizer), which is licensed under
+the same Apache License, Version 2.0. The commit history is preserved, so the
+original authorship and provenance of every change remain visible.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+This project depends on, redistributes, or interoperates with the third-party
+components listed below. Their full license texts and detailed attribution are
+collected in `docs/THIRD_PARTY_LICENSES.md`.
+
+Note: the list below is a summary. `docs/THIRD_PARTY_LICENSES.md` is the
+authoritative statement of third-party licensing for this project.
+
+  * ONNX Runtime (Microsoft) -- MIT License
+  * llama.cpp and prebuilt GGUF runtime packages (ggml-org) -- MIT License
+  * EmbeddingGemma 2 (Google) -- Gemma Terms of Use; downloaded on demand,
+    never redistributed in this repository
+  * PaddleOCR / PP-OCRv5 (PaddlePaddle) -- Apache License 2.0
+  * RapidOCR (RapidAI) -- Apache License 2.0 (reference implementation only)
+
+--------------------------------------------------------------------------------
+Models and runtimes
+--------------------------------------------------------------------------------
+
+No model weights or runtime binaries are stored in this repository. The scripts
+under `scripts/` download them on demand and verify their sha256 checksums:
+
+  * ONNX Runtime -- https://github.com/microsoft/onnxruntime
+  * llama.cpp runtime packages -- https://github.com/ggml-org/llama.cpp
+  * EmbeddingGemma 2 (ONNX and GGUF) -- https://ai.google.dev/gemma
+  * PP-OCRv5 (ONNX) -- https://github.com/PaddlePaddle/PaddleOCR
+
+--------------------------------------------------------------------------------
+Attribution
+--------------------------------------------------------------------------------
+
+The tag-and-organize design of the original project was inspired by TagStudio
+(https://github.com/TagStudioDev/TagStudio), which is licensed under GPL-3.0.
+No TagStudio code, resources, or copy text was used; only the design ideas were
+referenced.

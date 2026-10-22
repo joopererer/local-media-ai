@@ -1,0 +1,24 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# Local runtimes, models and imported libraries (never committed)
+/llama/
+/runtime/
+/models/
+*.lib
+*.dll
+*.so
+*.dylib
+*.zip
+
+# Python helpers
+__pycache__/
+*.pyc
+.venv/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
