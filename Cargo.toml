@@ -1,0 +1,10 @@
+[package]
+name = "embed_router"
+version.workspace = true
+edition.workspace = true
+description = "Embedding backend router and llama.cpp worker process supervision (stdio frames)."
+
+[dependencies]
+# 27.5: worker 与主进程共用 embed_core 的 stdio 帧协议。
+embed_core = { path = "../embed_core" }
+serde_json.workspace = true
