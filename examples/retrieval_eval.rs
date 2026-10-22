@@ -7,7 +7,7 @@
 // 用法（在 native/ 下）：
 //   retrieval_eval --ort_lib <dll> --model_dir <dir>
 //     --pub_dir <eval/public/images> --queries eval/queries.jsonl --expected eval/expected.jsonl
-//     --sim eval/similar.jsonl [--priv_dir D:/test/images --priv_manifest eval/private/manifest.jsonl]
+//     --sim eval/similar.jsonl [--priv_dir <PRIVATE_IMAGE_DIR> --priv_manifest <PRIVATE_MANIFEST>]
 //     --threads 4 --soft_tokens 140 --top_k 10 [--history_dir eval/history]
 //     [--backend ort-cpu|llama-worker --worker_exe <exe> --model_gguf <gguf> --mmproj_gguf <mmproj>]
 //
