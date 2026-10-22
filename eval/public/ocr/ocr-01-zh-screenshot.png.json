@@ -1,0 +1,14 @@
+{
+ "file": "ocr-01-zh-screenshot.png",
+ "truth_lines": [
+  "产品发布会 · 产品发布会",
+  "语义检索评测用例",
+  "电话：138-0000-1234  邮箱：test@example.com",
+  "会议纪要：周三下午三点在三楼会议室",
+  "合计金额：人民币壹万贰仟叁佰元整",
+  "己已巳已辨认清楚 0O0oIl1 形近字测试",
+  "Meeting notes: Wednesday 3pm, Room 301",
+  "Total: USD 12,300.00  invoice INV-2026-1016",
+  "版本 v2.6.1 · 版权所有 © 2026 示例公司 · 保留所有权利"
+ ]
+}

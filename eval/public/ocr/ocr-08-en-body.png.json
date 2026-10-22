@@ -1,0 +1,11 @@
+{
+ "file": "ocr-08-en-body.png",
+ "truth_lines": [
+  "Meeting notes: Wednesday 3pm, Room 301",
+  "Total: USD 12,300.00  invoice INV-2026-1016",
+  "The quick brown fox jumps over 13 lazy dogs",
+  "Error E_CONN_TIMEOUT after 3 retries",
+  "Il1i O0o0 lI|! confusables test",
+  "语义检索评测用例"
+ ]
+}

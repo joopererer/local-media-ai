@@ -1,0 +1,8 @@
+{"file": "ocr-01-zh-screenshot.png", "lang": "zh-en", "kind": "screenshot", "truth_lines": ["产品发布会 · 产品发布会", "语义检索评测用例", "电话：138-0000-1234  邮箱：test@example.com", "会议纪要：周三下午三点在三楼会议室", "合计金额：人民币壹万贰仟叁佰元整", "己已巳已辨认清楚 0O0oIl1 形近字测试", "Meeting notes: Wednesday 3pm, Room 301", "Total: USD 12,300.00  invoice INV-2026-1016", "版本 v2.6.1 · 版权所有 © 2026 示例公司 · 保留所有权利"]}
+{"file": "ocr-02-en-poster.png", "lang": "en", "kind": "poster", "truth_lines": ["Autumn Book Fair", "Oct 18, 9:00 AM", "Central Square", "Free entry"]}
+{"file": "ocr-03-zh-poster.png", "lang": "zh", "kind": "poster", "truth_lines": ["社区文化节", "时间：10月18日 上午9点", "地点：中心广场", "免费入场 欢迎参加"]}
+{"file": "ocr-04-table.png", "lang": "zh", "kind": "table", "truth_lines": ["项目 数量 单价 金额", "苹果 10 5.50 55.00", "香蕉 6 3.20 19.20", "橙子 8 4.00 32.00"]}
+{"file": "ocr-05-zh-vertical.png", "lang": "zh", "kind": "vertical", "truth_lines": ["竖排文字测试从右", "向左排列"]}
+{"file": "ocr-06-noisy-confusables.png", "lang": "zh-en", "kind": "noisy", "truth_lines": ["己已巳已辨认清楚 0O0oIl1 形近字测试", "Il1i O0o0 lI|! confusables test", "服务热线 400-820-0000"]}
+{"file": "ocr-07-mixed-poster.png", "lang": "zh-en", "kind": "poster", "truth_lines": ["社区文化节 Community Festival", "时间 Time：10月18日 Oct 18 上午9点 9AM", "地点 Place：中心广场 Central Square", "免费入场 Free entry"]}
+{"file": "ocr-08-en-body.png", "lang": "en", "kind": "document", "truth_lines": ["Meeting notes: Wednesday 3pm, Room 301", "Total: USD 12,300.00  invoice INV-2026-1016", "The quick brown fox jumps over 13 lazy dogs", "Error E_CONN_TIMEOUT after 3 retries", "Il1i O0o0 lI|! confusables test", "语义检索评测用例"]}

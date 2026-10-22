@@ -1,0 +1,7 @@
+{
+ "file": "ocr-05-zh-vertical.png",
+ "truth_lines": [
+  "竖排文字测试从右",
+  "向左排列"
+ ]
+}

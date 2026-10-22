@@ -68,7 +68,7 @@ try {
 
   $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLower()
   if ($expected -and $actual -ne $expected) {
-    throw "sha256 mismatch for $asset: expected $expected, got $actual"
+    throw "sha256 mismatch for ${asset}: expected $expected, got $actual"
   }
   if (-not $expected) {
     Write-Warning "Unpinned download. Computed sha256: $actual"

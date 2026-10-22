@@ -64,7 +64,7 @@ if (-not (Test-Path $zip)) {
 
 $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
 if ($actual -ne $expected) {
-  throw "sha256 mismatch for $asset: expected $expected, got $actual"
+  throw "sha256 mismatch for ${asset}: expected $expected, got $actual"
 }
 
 $extract = Join-Path $cache "$Version-extract"
