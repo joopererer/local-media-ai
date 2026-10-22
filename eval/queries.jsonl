@@ -1,0 +1,18 @@
+{"id": "q01", "query_zh": "木椅", "query_en": "wooden chairs", "expected": ["object-151311410.jpg", "object-151311409.jpg", "object-151311411.jpg"], "note": "同一场景三张，考察同主体多图召回"}
+{"id": "q02", "query_zh": "吉他", "query_en": "acoustic guitar", "expected": ["object-86334911.jpg", "object-116872725.jpg"], "note": "人物弹奏 + 静物特写"}
+{"id": "q03", "query_zh": "海边日落", "query_en": "sunset by the sea", "expected": ["landscape-163193192.jpg", "landscape-61898374.jpg", "landscape-194181667.jpg"], "note": "三张不同地点的海上日落"}
+{"id": "q04", "query_zh": "日落时的人影剪影", "query_en": "silhouettes against the sunset", "expected": ["landscape-163193192.jpg"], "note": "仅海滩剪影那张"}
+{"id": "q05", "query_zh": "森林里的小路", "query_en": "a path through the forest", "expected": ["landscape-198596742.jpg", "landscape-159339014.jpg"], "note": "土路 + 秋日林径"}
+{"id": "q06", "query_zh": "湖泊与群山", "query_en": "a lake surrounded by mountains", "expected": ["landscape-117648128.jpg", "landscape-199853967.jpg"], "note": "两处山湖"}
+{"id": "q07", "query_zh": "客厅", "query_en": "living room", "expected": ["indoor-89046296.jpg", "indoor-150610403.jpg", "indoor-196624674.png"], "note": "乡村重现 + 公寓 + 现代样板间"}
+{"id": "q08", "query_zh": "厨房", "query_en": "kitchen", "expected": ["indoor-158734074.jpg", "indoor-61880111.jpg"], "note": "咖啡馆厨房 + 家用厨房"}
+{"id": "q09", "query_zh": "咖啡杯", "query_en": "a cup of coffee", "expected": ["object-174953164.jpg", "object-61715726.jpg", "object-62122968.jpg"], "note": "三种咖啡杯"}
+{"id": "q10", "query_zh": "拿铁拉花", "query_en": "latte art", "expected": ["object-61715726.jpg", "object-62122968.jpg"], "note": "比 q09 更具体"}
+{"id": "q11", "query_zh": "自行车道标志", "query_en": "bicycle lane sign", "expected": ["object-149978837.jpg", "object-73587539.jpg"], "note": "丹麦/德国两块标志牌"}
+{"id": "q12", "query_zh": "孩子们在户外玩耍", "query_en": "children playing outdoors", "expected": ["person-62056412.jpg", "person-61766159.jpg"], "note": "滑板场 + 雪地"}
+{"id": "q13", "query_zh": "孩子在雪地里", "query_en": "children in the snow", "expected": ["person-61766159.jpg"], "note": "具体到雪地"}
+{"id": "q14", "query_zh": "抽烟斗的大胡子男人", "query_en": "a bearded man smoking a pipe", "expected": ["person-68598168.jpg"], "note": "单张精确目标（黑白照）"}
+{"id": "q15", "query_zh": "文艺复兴时期的人物肖像油画", "query_en": "Renaissance portrait painting", "expected": ["person-57670248.jpg", "person-57671448.jpg", "person-27554267.jpg", "person-145870434.jpg"], "note": "四张画作，考察 art/photo 区分"}
+{"id": "q16", "query_zh": "集市上的妇女", "query_en": "a woman at the market", "expected": ["person-25165605.jpg"], "note": "单张"}
+{"id": "q17", "query_zh": "吹竖笛的女孩", "query_en": "a girl playing a recorder", "expected": ["person-41882707.jpg"], "note": "单张"}
+{"id": "q18", "query_zh": "关于厨房的古典油画", "query_en": "an old painting of a kitchen interior", "expected": ["indoor-57669992.jpg"], "note": "油画 vs 照片的语义区分"}

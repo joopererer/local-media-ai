@@ -172,7 +172,9 @@ pub enum VideoError {
     FfmpegFailed(String),
     #[error("抽帧未实现/该平台不支持: {0}")]
     Unavailable(String),
-    #[error("跳转定位落点偏差过大：请求 {requested_ms}ms，实测 {actual_ms:?}ms，偏差 {drift_ms}ms")]
+    #[error(
+        "跳转定位落点偏差过大：请求 {requested_ms}ms，实测 {actual_ms:?}ms，偏差 {drift_ms}ms"
+    )]
     BadSeek {
         requested_ms: u64,
         actual_ms: Option<u64>,
@@ -291,8 +293,7 @@ pub fn extract_frames_with(
         // Filter 方式：t_ms 全部来自 ffmpeg `showinfo` 的**实测** pts_time（扣除起始时间），
         // 不再用代码算的目标时刻代替。在 `-i` 之前加 `-ss half_interval` 偏移，
         // 让首帧避开 0 秒位置，与跳转定位的中点采样一致。
-        let (f, u, t) =
-            extract_by_filter(ffmpeg_bin, video, out_dir, &plan, options, runner)?;
+        let (f, u, t) = extract_by_filter(ffmpeg_bin, video, out_dir, &plan, options, runner)?;
         (f, u, t, 0)
     };
 
@@ -406,12 +407,12 @@ fn extract_by_filter(
 }
 
 /// 探测视频流起始时间戳（毫秒）。读不到时返回 0（多数视频从 0 开始）。
-fn probe_start_time_ms(
-    ffmpeg_bin: &Path,
-    video: &Path,
-    runner: &dyn ProcessRunner,
-) -> u64 {
-    let args = vec!["-hide_banner".to_string(), "-i".to_string(), path_arg(video)];
+fn probe_start_time_ms(ffmpeg_bin: &Path, video: &Path, runner: &dyn ProcessRunner) -> u64 {
+    let args = vec![
+        "-hide_banner".to_string(),
+        "-i".to_string(),
+        path_arg(video),
+    ];
     match runner.run(ffmpeg_bin, &args) {
         Ok(out) => parse_start_time_ms(&out.stderr),
         Err(_) => 0,
@@ -435,30 +436,43 @@ fn extract_by_seek(
     runner: &dyn ProcessRunner,
 ) -> Result<(Vec<VideoFrame>, FpsModePolicy, u64), VideoError> {
     // 先 probe 一次以获取起始时间戳和其他信息
-    let probe_args = vec!["-hide_banner".to_string(), "-i".to_string(), path_arg(video)];
+    let probe_args = vec![
+        "-hide_banner".to_string(),
+        "-i".to_string(),
+        path_arg(video),
+    ];
     let probe_out = runner.run(ffmpeg_bin, &probe_args)?;
     let start_time_ms = parse_start_time_ms(&probe_out.stderr);
-    
+
     let mut frames: Vec<VideoFrame> = Vec::with_capacity(targets_ms.len());
     let mut max_drift: u64 = 0;
-    
+
     for (i, &at_ms) in targets_ms.iter().enumerate() {
         let image_path = out_dir.join(format!("frame_{i:06}.png"));
         let args = build_seek_args(video, at_ms, &image_path, options);
         let out = runner.run(ffmpeg_bin, &args)?;
-        
+
         if !out.success {
             // 单帧失败不中断，尝试下一帧
-            eprintln!("警告：第 {}/{} 帧（{at_ms}ms）抽取失败：{}", i + 1, targets_ms.len(), tail(&out.stderr, 200));
+            eprintln!(
+                "警告：第 {}/{} 帧（{at_ms}ms）抽取失败：{}",
+                i + 1,
+                targets_ms.len(),
+                tail(&out.stderr, 200)
+            );
             continue;
         }
-        
+
         if !image_path.is_file() {
             // 单帧失败不中断
-            eprintln!("警告：第 {}/{} 帧（{at_ms}ms）ffmpeg 成功退出但未产出帧文件", i + 1, targets_ms.len());
+            eprintln!(
+                "警告：第 {}/{} 帧（{at_ms}ms）ffmpeg 成功退出但未产出帧文件",
+                i + 1,
+                targets_ms.len()
+            );
             continue;
         }
-        
+
         // 解析实测落点，扣除起始时间
         let actual = parse_pts_times_ms(&out.stderr).first().copied();
         if let Some(a) = actual {
@@ -470,7 +484,7 @@ fn extract_by_seek(
                 (at_ms.saturating_add(start_time_ms)).saturating_sub(a)
             };
             max_drift = max_drift.max(drift_abs);
-            
+
             // 若偏差超过警告阈值，记录日志（但不中断）
             // 警告阈值 = min(half_sampling_interval, 2000ms)
             let half_interval = if targets_ms.len() > 1 {
@@ -480,30 +494,41 @@ fn extract_by_seek(
             };
             let warning_threshold = half_interval.min(2000);
             if drift_abs > warning_threshold {
-                eprintln!("警告：第 {}/{} 帧定位偏差 {:.1}ms（请求 {}, 实测 {}, 起始时间 {}）", 
-                    i + 1, targets_ms.len(), drift_abs as f64, at_ms, a, start_time_ms);
+                eprintln!(
+                    "警告：第 {}/{} 帧定位偏差 {:.1}ms（请求 {}, 实测 {}, 起始时间 {}）",
+                    i + 1,
+                    targets_ms.len(),
+                    drift_abs as f64,
+                    at_ms,
+                    a,
+                    start_time_ms
+                );
             }
-            
+
             frames.push(VideoFrame {
                 image_path,
                 t_ms: adjusted_t_ms,
             });
         } else {
-            eprintln!("警告：第 {}/{} 帧（{at_ms}ms）无法解析实测时间戳，使用请求时刻", i + 1, targets_ms.len());
+            eprintln!(
+                "警告：第 {}/{} 帧（{at_ms}ms）无法解析实测时间戳，使用请求时刻",
+                i + 1,
+                targets_ms.len()
+            );
             frames.push(VideoFrame {
                 image_path,
                 t_ms: at_ms,
             });
         }
     }
-    
+
     if frames.is_empty() {
         return Err(VideoError::FfmpegFailed(format!(
             "跳转定位失败：所有 {} 帧都无法抽取（视频格式可能不支持快速定位）",
             targets_ms.len()
         )));
     }
-    
+
     // 跳转定位不写帧率直通参数（每帧单张），回报值只用于界面说明。
     let used = if options.fps_mode == FpsModePolicy::Vsync {
         FpsModePolicy::Vsync
@@ -616,11 +641,7 @@ pub fn frame_timestamp_ms(index: usize, plan: &SamplingPlan, pts_ms: &[u64]) -> 
 }
 
 /// 抽样计划：短视频取中点单帧；长视频放大间隔以均匀覆盖全片并满足帧数上限。
-pub fn plan_sampling(
-    duration_ms: Option<u64>,
-    every_ms: u64,
-    max_frames: u32,
-) -> SamplingPlan {
+pub fn plan_sampling(duration_ms: Option<u64>, every_ms: u64, max_frames: u32) -> SamplingPlan {
     let every_ms = every_ms.max(MIN_EVERY_MS);
     let max_frames = max_frames.max(1);
     match duration_ms {
@@ -731,7 +752,11 @@ fn probe_duration_ms(
     video: &Path,
     runner: &dyn ProcessRunner,
 ) -> Result<Option<u64>, VideoError> {
-    let args = vec!["-hide_banner".to_string(), "-i".to_string(), path_arg(video)];
+    let args = vec![
+        "-hide_banner".to_string(),
+        "-i".to_string(),
+        path_arg(video),
+    ];
     let out = runner.run(ffmpeg_bin, &args)?;
     // 只有输入没有输出时 ffmpeg 返回非零，但 banner 仍然可用。
     Ok(parse_duration_ms(&out.stderr))
@@ -803,7 +828,12 @@ fn build_args(
     );
     args.push("-threads".into());
     args.push(options.threads.max(1).to_string());
-    args.push(out_dir.join("frame_%06d.png").to_string_lossy().into_owned());
+    args.push(
+        out_dir
+            .join("frame_%06d.png")
+            .to_string_lossy()
+            .into_owned(),
+    );
     args
 }
 
@@ -914,8 +944,9 @@ mod tests {
             let mut stderr: String;
 
             // banner 探测（只有 -i，没有输出文件模板）时不产生帧。
-            let is_probe =
-                !args.iter().any(|a| a.ends_with(".png") || a.contains("%06d"));
+            let is_probe = !args
+                .iter()
+                .any(|a| a.ends_with(".png") || a.contains("%06d"));
 
             if is_probe && !will_fail {
                 // 探测调用（filter 路径用于读起始时间）→ 返回 banner。
@@ -1112,18 +1143,27 @@ mod tests {
         .unwrap();
         let args = runner.last_args();
         let joined = args.join(" ");
-        assert!(joined.contains("-threads 2"), "解码/编码线程需限制: {joined}");
+        assert!(
+            joined.contains("-threads 2"),
+            "解码/编码线程需限制: {joined}"
+        );
         // 27.4 复核：采样间隔用 select 表达（不是 fps=），且配合 showinfo。
         assert!(
             joined.contains("select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,5.000000)'"),
             "采样间隔需以 select 表达: {joined}"
         );
-        assert!(joined.contains(",showinfo"), "filter 路径必须有 showinfo: {joined}");
+        assert!(
+            joined.contains(",showinfo"),
+            "filter 路径必须有 showinfo: {joined}"
+        );
         assert!(joined.contains("-frames:v 24"));
         assert!(joined.contains("-fps_mode vfr"));
         assert!(args.last().unwrap().ends_with("frame_%06d.png"));
         // filter 长视频现加 -ss half_interval 偏移输入。
-        assert!(joined.contains("-ss 2.500"), "filter 长视频路径需加 half_interval 偏移: {joined}");
+        assert!(
+            joined.contains("-ss 2.500"),
+            "filter 长视频路径需加 half_interval 偏移: {joined}"
+        );
         // 调一次 probe + 一次 filter = 2 次
         assert_eq!(runner.call_count(), 2, "probe(1) + filter(1)");
         assert_eq!(outcome.frames.len(), 2);
@@ -1159,7 +1199,10 @@ mod tests {
             "select 中应使用均匀重采样后的间隔: {joined}"
         );
         // filter 长视频加 half_interval 偏移
-        assert!(joined.contains("-ss 12.500"), "filter 长视频需加 half_interval 偏移: {joined}");
+        assert!(
+            joined.contains("-ss 12.500"),
+            "filter 长视频需加 half_interval 偏移: {joined}"
+        );
     }
 
     #[test]
@@ -1218,7 +1261,10 @@ mod tests {
         }
         let joined = runner.last_args().join(" ");
         // 加 half_interval 输入偏移
-        assert!(joined.contains("-ss 12.500"), "filter 长视频需加 half_interval 偏移: {joined}");
+        assert!(
+            joined.contains("-ss 12.500"),
+            "filter 长视频需加 half_interval 偏移: {joined}"
+        );
         assert!(
             joined.contains("prev_selected_t\\,25.000000"),
             "select 间隔使用重采样后的 every_ms: {joined}"
@@ -1390,11 +1436,7 @@ mod tests {
             &runner,
         )
         .unwrap();
-        assert_eq!(
-            runner.call_count(),
-            3,
-            "应为 probe + 2 次 filter 尝试"
-        );
+        assert_eq!(runner.call_count(), 3, "应为 probe + 2 次 filter 尝试");
         assert!(runner.last_args().join(" ").contains("-vsync vfr"));
         assert_eq!(outcome.used_fps_mode, FpsModePolicy::Vsync);
         assert_eq!(outcome.frames.len(), 2, "半成品帧必须清掉，只剩重试产出");
@@ -1457,10 +1499,19 @@ mod tests {
             .find(|a| a.iter().any(|x| x.contains(".png")))
             .expect("应有抽帧调用");
         let joined = extract_call.join(" ");
-        assert!(!joined.contains("-fps_mode"), "单帧路径不带帧率直通参数: {joined}");
-        assert!(!joined.contains("-vsync"), "单帧路径不带帧率直通参数: {joined}");
+        assert!(
+            !joined.contains("-fps_mode"),
+            "单帧路径不带帧率直通参数: {joined}"
+        );
+        assert!(
+            !joined.contains("-vsync"),
+            "单帧路径不带帧率直通参数: {joined}"
+        );
         // 单帧路径不走 select
-        assert!(!joined.contains("prev_selected_t"), "单帧路径不带 select: {joined}");
+        assert!(
+            !joined.contains("prev_selected_t"),
+            "单帧路径不带 select: {joined}"
+        );
     }
 
     // ── 抽帧方式（帧率过滤 vs 跳转定位）──────────────────────────────────
@@ -1477,7 +1528,11 @@ mod tests {
             ExtractMethod::Seek
         );
         assert_eq!(
-            resolve_method(ExtractMethod::Auto, Some(3_600_000), DEFAULT_SEEK_THRESHOLD_MS),
+            resolve_method(
+                ExtractMethod::Auto,
+                Some(3_600_000),
+                DEFAULT_SEEK_THRESHOLD_MS
+            ),
             ExtractMethod::Seek
         );
         // 时长未知 ⇒ 只能帧率过滤（跳转定位需要目标时刻）。
@@ -1549,8 +1604,14 @@ mod tests {
         assert_eq!(runner.call_count(), 25, "probe + 24 帧");
         assert_eq!(outcome.frames.len(), 24);
         // FakeRunner 从 -ss 参数提取时刻，返回相同的 pts_time，扣除起始时间 0 后 t_ms 就是那个值
-        assert_eq!(outcome.frames[0].t_ms, 2500, "第 0 帧中点 = (0 + 0.5) / 24 × 120000");
-        assert_eq!(outcome.frames[1].t_ms, 7500, "第 1 帧中点 = (1 + 0.5) / 24 × 120000");
+        assert_eq!(
+            outcome.frames[0].t_ms, 2500,
+            "第 0 帧中点 = (0 + 0.5) / 24 × 120000"
+        );
+        assert_eq!(
+            outcome.frames[1].t_ms, 7500,
+            "第 1 帧中点 = (1 + 0.5) / 24 × 120000"
+        );
 
         let first_seek = runner.calls.borrow()[1].join(" "); // 跳过 probe，看第一个 seek 调用
         let ss = first_seek.find("-ss").expect("-ss 缺失");
@@ -1566,7 +1627,7 @@ mod tests {
         // 第 0 帧落点偏差 7s（超 2s 警告阈值），但仍返回该帧；第 1 帧无实测时间戳（缺 pts），用请求时刻。
         let mut runner = FakeRunner::new(0, "");
         runner = runner.failing_on("notfound", 0); // 模拟某次调用返回失败
-        
+
         let opts = ExtractOptions {
             duration_hint_ms: Some(120_000),
             method: ExtractMethod::Seek,
@@ -1581,7 +1642,7 @@ mod tests {
             &runner,
         )
         .unwrap();
-        
+
         // 即使有偏差，仍正常返回
         assert_eq!(outcome.method, ExtractMethod::Seek);
         assert!(!outcome.frames.is_empty(), "应至少返回一帧（容错继续）");
@@ -1650,7 +1711,8 @@ mod tests {
 
     #[test]
     fn near_duplicate_uses_hamming_distance_on_64bit_hash() {
-        let base = 0b1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010u64;
+        let base =
+            0b1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010_1010u64;
         assert!(is_near_duplicate(base, base, 0));
         let one_bit_flip = base ^ 0b1;
         assert!(is_near_duplicate(base, one_bit_flip, 1));
@@ -1663,7 +1725,10 @@ mod tests {
     fn parses_duration_and_pts_from_ffmpeg_banner() {
         let banner = "  Duration: 00:05:23.45, start: 0.000000, bitrate: 1500 kb/s";
         assert_eq!(parse_duration_ms(banner), Some(323_450));
-        assert_eq!(parse_duration_ms("Duration: 00:00:03.00, start: 0"), Some(3_000));
+        assert_eq!(
+            parse_duration_ms("Duration: 00:00:03.00, start: 0"),
+            Some(3_000)
+        );
         assert_eq!(parse_duration_ms("Duration: N/A, start: 0"), None);
         assert_eq!(parse_duration_ms("no duration here"), None);
 
@@ -1693,11 +1758,6 @@ n: 2 pts_time:10.500000
         .unwrap();
         assert_eq!(outcome.duration_ms, Some(4_000));
         // 4s < 5s ⇒ 走"中点单帧"分支。
-        assert!(
-            runner
-                .last_args()
-                .join(" ")
-                .contains("-ss 2.000")
-        );
+        assert!(runner.last_args().join(" ").contains("-ss 2.000"));
     }
 }

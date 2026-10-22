@@ -1,0 +1,6 @@
+# sha256 of the ONNX Runtime archive used by scripts/fetch_onnxruntime.ps1
+#
+# Format: <file>  <sha256>
+#
+# Verified against onnxruntime-win-x64-1.30.0.zip.
+onnxruntime-win-x64-1.30.0.zip  c6ba983baf5681af108599675d2a89c2d145512d02de28aed0bff177cd0ba949

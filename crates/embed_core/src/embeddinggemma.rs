@@ -75,7 +75,7 @@ pub fn init_ort(lib_path: &Path) -> Result<(), EmbedError> {
     }
     let res = ORT_INIT.get_or_init(|| {
         let builder = ort::init_from(lib_path).map_err(|e| e.to_string())?;
-        if builder.with_name("fo_core").commit() {
+        if builder.with_name("local_media_ai").commit() {
             Ok(lib_path.to_path_buf())
         } else {
             Err("ORT 环境初始化失败".to_string())

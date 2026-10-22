@@ -10,7 +10,7 @@
 //! - [`embeddinggemma`]：EmbeddingGemma 2 专属实现（[`Embedder`]）。
 //! - [`image_prep`]：图片预处理（缩放、切补丁、位置 id、token 序列），可单独测试。
 //!
-//! 兼容：`fo_core::embed` 重新导出本 crate，故原调用点（含示例与 FRB 层）路径不变。
+//! 兼容：下游应用可重新导出本 crate（例如 `app_core::embed`），原调用点路径不变。
 
 pub mod embeddinggemma;
 pub mod image_prep;

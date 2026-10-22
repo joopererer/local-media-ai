@@ -155,7 +155,9 @@ impl EmbedRouter {
     ) -> Result<(Vec<f32>, f64), EmbeddingApiError> {
         let mut inner = self.inner.lock().unwrap();
         if !want_worker(&inner) {
-            return Err(EmbeddingApiError::worker_unavailable("worker 未启用或熔断中"));
+            return Err(EmbeddingApiError::worker_unavailable(
+                "worker 未启用或熔断中",
+            ));
         }
         // 闲置超时：停掉旧 worker，下次重建（释放显存/内存）。
         if inner
@@ -273,12 +275,11 @@ fn worker_log_file(log_dir: Option<&std::path::Path>) -> Option<std::fs::File> {
     } else if let Ok(d) = std::env::var("FO_LLAMA_LOG_DIR") {
         PathBuf::from(d)
     } else if let Ok(l) = std::env::var("LOCALAPPDATA") {
-        PathBuf::from(l).join("file_organizer").join("logs")
+        PathBuf::from(l).join("local-media-ai").join("logs")
     } else if let Ok(h) = std::env::var("HOME") {
-        PathBuf::from(h)
-            .join(".local/share/file_organizer/logs")
+        PathBuf::from(h).join(".local/share/local-media-ai/logs")
     } else {
-        std::env::temp_dir().join("file_organizer-logs")
+        std::env::temp_dir().join("local-media-ai-logs")
     };
     if std::fs::create_dir_all(&dir).is_err() {
         return None;
@@ -287,11 +288,7 @@ fn worker_log_file(log_dir: Option<&std::path::Path>) -> Option<std::fs::File> {
     if let Ok(entries) = std::fs::read_dir(&dir) {
         let mut logs: Vec<_> = entries
             .flatten()
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("llama-worker-")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("llama-worker-"))
             .map(|e| e.path())
             .collect();
         if logs.len() >= 5 {
@@ -318,13 +315,19 @@ fn ensure_worker(router: &EmbedRouter, inner: &mut Inner) -> Result<String, Embe
             .map(|w| w.child.try_wait().ok().flatten().is_none())
             .unwrap_or(false);
         if alive {
-            return Ok(inner.worker.as_ref().map(|w| w.runtime.clone()).unwrap_or_default());
+            return Ok(inner
+                .worker
+                .as_ref()
+                .map(|w| w.runtime.clone())
+                .unwrap_or_default());
         }
         stop_worker(inner);
     }
     let cfg = inner.cfg.clone();
     if cfg.model_gguf.as_os_str().is_empty() || cfg.mmproj_gguf.as_os_str().is_empty() {
-        return Err(EmbeddingApiError::worker_unavailable("worker 模型路径未配置"));
+        return Err(EmbeddingApiError::worker_unavailable(
+            "worker 模型路径未配置",
+        ));
     }
     let mut child = Command::new(&cfg.worker_exe)
         .arg("--model")
@@ -339,16 +342,13 @@ fn ensure_worker(router: &EmbedRouter, inner: &mut Inner) -> Result<String, Embe
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or(std::path::Path::new(".")),
         )
-        .env(
-            "PATH",
-            {
-                let mut llama_dir = cfg.worker_exe.clone();
-                llama_dir.pop();
-                llama_dir.push("llama");
-                let old = std::env::var("PATH").unwrap_or_default();
-                format!("{};{}", llama_dir.display(), old)
-            },
-        )
+        .env("PATH", {
+            let mut llama_dir = cfg.worker_exe.clone();
+            llama_dir.pop();
+            llama_dir.push("llama");
+            let old = std::env::var("PATH").unwrap_or_default();
+            format!("{};{}", llama_dir.display(), old)
+        })
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(match worker_log_file(cfg.log_dir.as_deref()) {
@@ -418,7 +418,9 @@ fn ensure_worker(router: &EmbedRouter, inner: &mut Inner) -> Result<String, Embe
         Ok(_) => {
             kill_worker(inner);
             note_crash(inner);
-            return Err(EmbeddingApiError::worker_unavailable("worker 握手返回了向量"));
+            return Err(EmbeddingApiError::worker_unavailable(
+                "worker 握手返回了向量",
+            ));
         }
         Err(json) => json,
     };
@@ -502,7 +504,9 @@ fn roundtrip_once(
                 let code = child.try_wait().ok().flatten().and_then(|s| s.code());
                 kill_worker(inner);
                 note_crash(inner);
-                return Err(EmbedRouterRetry::Done(EmbeddingApiError::worker_crashed(code)));
+                return Err(EmbedRouterRetry::Done(EmbeddingApiError::worker_crashed(
+                    code,
+                )));
             }
         }
         std::thread::sleep(Duration::from_millis(10));
@@ -591,7 +595,9 @@ mod tests {
             .call_worker(&Request::Text("hi".into()), Duration::from_secs(3))
             .unwrap_err();
         assert!(
-            err.detail.contains("崩溃") || err.detail.contains("中断") || err.detail.contains("握手"),
+            err.detail.contains("崩溃")
+                || err.detail.contains("中断")
+                || err.detail.contains("握手"),
             "{}",
             err.detail
         );

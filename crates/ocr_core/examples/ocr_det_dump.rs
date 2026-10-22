@@ -15,7 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img_path = args.last().unwrap();
     let img = image::open(img_path)?.to_rgb8();
     let (w, h) = img.dimensions();
-    let data = prep_for_det(&RgbImageData { w, h, data: img.as_raw().to_vec() });
+    let data = prep_for_det(&RgbImageData {
+        w,
+        h,
+        data: img.as_raw().to_vec(),
+    });
     for (b, score) in eng.detect_debug(&data)? {
         println!(
             "{{\"bbox\":[{:.1},{:.1},{:.1},{:.1}],\"score\":{:.3}}}",

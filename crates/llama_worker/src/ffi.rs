@@ -107,7 +107,8 @@ unsafe extern "C" {
         idx: i32,
         value: bool,
     ) -> bool;
-    pub fn llama_process(ctx: *mut llama_context, ptype: c_int, batch: *mut llama_batch_ext) -> i32;
+    pub fn llama_process(ctx: *mut llama_context, ptype: c_int, batch: *mut llama_batch_ext)
+        -> i32;
     pub fn llama_get_embeddings_seq(ctx: *mut llama_context, seq_id: llama_seq_id) -> *mut f32;
     pub fn mtmd_context_params_default() -> MtmdParams;
     pub fn mtmd_init_from_file(

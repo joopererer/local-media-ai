@@ -1,0 +1,6 @@
+# sha256 of the llama.cpp prebuilt package used by scripts/fetch_llama_runtime.ps1
+#
+# Format: <file>  <sha256>
+#
+# Verified against llama-b11669-bin-win-vulkan-x64.zip.
+llama-b11669-bin-win-vulkan-x64.zip  2c07574e7bde71321cb785282b20cc821e951132149eeceeea32ddebdbf0598e

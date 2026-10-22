@@ -79,18 +79,19 @@ impl PaddleOcr {
         let rec_path = model_dir.join("rec.onnx");
         for p in [&det_path, &cls_path, &rec_path] {
             if !p.is_file() {
-                return Err(OcrError::Unavailable(format!("OCR 模型缺失: {}", p.display())));
+                return Err(OcrError::Unavailable(format!(
+                    "OCR 模型缺失: {}",
+                    p.display()
+                )));
             }
         }
         let det = build_session(&det_path, threads)?;
         let cls = build_session(&cls_path, threads)?;
         let rec = build_session(&rec_path, threads)?;
         // 字符字典内嵌于 rec.onnx 的 metadata（键 `character`，按行分隔）。
-        let raw: Option<String> =
-            rec.metadata().ok().and_then(|m| m.custom("character"));
-        let raw = raw.ok_or_else(|| {
-            OcrError::Unavailable("rec.onnx 缺少 character metadata".to_string())
-        })?;
+        let raw: Option<String> = rec.metadata().ok().and_then(|m| m.custom("character"));
+        let raw = raw
+            .ok_or_else(|| OcrError::Unavailable("rec.onnx 缺少 character metadata".to_string()))?;
         // 复刻 CTCLabelDecode：blank 插入索引 0，末尾追加空格。
         let mut charset: Vec<String> = raw.split('\n').map(|s| s.to_string()).collect();
         if charset.last().map(|s| s.is_empty()).unwrap_or(false) {
@@ -119,7 +120,11 @@ impl PaddleOcr {
         if rgb.len() != w as usize * h as usize * 3 {
             return Err(OcrError::Decode("像素长度与尺寸不符".to_string()));
         }
-        let mut img = RgbImageData { w, h, data: rgb.to_vec() };
+        let mut img = RgbImageData {
+            w,
+            h,
+            data: rgb.to_vec(),
+        };
 
         // 1) 全局预处理（边界缩放）+ 竖排补白。
         img = resize_within_bounds(&img, 30.0, 2000.0);
@@ -176,13 +181,12 @@ impl PaddleOcr {
                 let i = (y * rw as usize + x) * 3;
                 for c in 0..3 {
                     let v = resized.data[i + c] as f32 / 255.0;
-                    chw[c * (rh as usize) * (rw as usize) + y * rw as usize + x] =
-                        (v - 0.5) / 0.5;
+                    chw[c * (rh as usize) * (rw as usize) + y * rw as usize + x] = (v - 0.5) / 0.5;
                 }
             }
         }
-        let input = Tensor::from_array(([1usize, 3, rh as usize, rw as usize], chw))
-            .map_err(inf)?;
+        let input =
+            Tensor::from_array(([1usize, 3, rh as usize, rw as usize], chw)).map_err(inf)?;
         let (ph, pw, data) = {
             let mut session = self.det.lock().map_err(|_| inf("det 锁已损坏"))?;
             let outputs = session.run(ort::inputs! { "x" => input }).map_err(inf)?;
@@ -198,7 +202,10 @@ impl PaddleOcr {
         }
 
         // 阈值化 + 2x2 膨胀。
-        let mut mask: Vec<u8> = data[..ph * pw].iter().map(|&v| (v > DET_THRESH) as u8).collect();
+        let mut mask: Vec<u8> = data[..ph * pw]
+            .iter()
+            .map(|&v| (v > DET_THRESH) as u8)
+            .collect();
         let orig = mask.clone();
         for y in 0..ph {
             for x in 0..pw {
@@ -465,7 +472,10 @@ fn resize_within_bounds(img: &RgbImageData, min_side: f32, max_side: f32) -> Rgb
     let minv = out.w.min(out.h) as f32;
     if minv < min_side {
         let ratio = min_side / minv;
-        let (rw, rh) = (align32(out.w as f32 * ratio).max(32), align32(out.h as f32 * ratio).max(32));
+        let (rw, rh) = (
+            align32(out.w as f32 * ratio).max(32),
+            align32(out.h as f32 * ratio).max(32),
+        );
         out = resize_bilinear(&out, rw, rh);
     }
     out
@@ -480,8 +490,7 @@ fn vertical_pad(img: &RgbImageData, ratio: f32, min_height: u32) -> (RgbImageDat
         let out_h = img.h + pad * 2;
         let mut data = vec![0u8; out_h as usize * img.w as usize * 3];
         let row = img.w as usize * 3;
-        data[pad as usize * row..(pad as usize + img.h as usize) * row]
-            .copy_from_slice(&img.data);
+        data[pad as usize * row..(pad as usize + img.h as usize) * row].copy_from_slice(&img.data);
         return (
             RgbImageData {
                 w: img.w,
@@ -522,11 +531,7 @@ fn crop_axis_aligned(img: &RgbImageData, b: &DetBox) -> Result<RgbImageData, Ocr
         let row = (y * img.w + x0) as usize * 3;
         data.extend_from_slice(&img.data[row..row + cw as usize * 3]);
     }
-    let mut out = RgbImageData {
-        w: cw,
-        h: ch,
-        data,
-    };
+    let mut out = RgbImageData { w: cw, h: ch, data };
     // 复刻 get_rotate_crop_image：高/宽 ≥ 1.5 时逆时针 90°（竖排转横读）。
     if out.h as f32 / out.w as f32 >= 1.5 {
         out = rotate_90_ccw(&out);

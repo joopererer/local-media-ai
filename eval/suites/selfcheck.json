@@ -1,0 +1,34 @@
+{
+  "name": "selfcheck-public",
+  "description": "Consistency self-check for the public evaluation set: 10 Chinese + 10 English text queries plus 5 query images taken from eval/public/images. The image files are resolved against --image_dir (defaults to eval/public/images) and verified by sha256, so the suite stays reproducible without any private material.",
+  "prefix": "",
+  "texts": [
+    { "id": "zh-01", "text": "牛仔热裤" },
+    { "id": "zh-02", "text": "浅蓝色上衣" },
+    { "id": "zh-03", "text": "沙发" },
+    { "id": "zh-04", "text": "丝袜" },
+    { "id": "zh-05", "text": "高跟鞋" },
+    { "id": "zh-06", "text": "站立姿势" },
+    { "id": "zh-07", "text": "室外" },
+    { "id": "zh-08", "text": "楼梯" },
+    { "id": "zh-09", "text": "背面" },
+    { "id": "zh-10", "text": "裸体" },
+    { "id": "en-01", "text": "denim shorts" },
+    { "id": "en-02", "text": "light blue top" },
+    { "id": "en-03", "text": "sofa" },
+    { "id": "en-04", "text": "stockings" },
+    { "id": "en-05", "text": "high heels" },
+    { "id": "en-06", "text": "standing person" },
+    { "id": "en-07", "text": "outdoors" },
+    { "id": "en-08", "text": "stairs" },
+    { "id": "en-09", "text": "back view" },
+    { "id": "en-10", "text": "nude" }
+  ],
+  "images": [
+    { "id": "img-query-01", "file": "indoor-89046296.jpg" },
+    { "id": "img-query-02", "file": "landscape-117648128.jpg" },
+    { "id": "img-query-03", "file": "object-149978837.jpg" },
+    { "id": "img-query-04", "file": "indoor-150610403.jpg" },
+    { "id": "img-query-05", "file": "landscape-58741483.jpg" }
+  ]
+}

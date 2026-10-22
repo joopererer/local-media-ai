@@ -1,0 +1,56 @@
+{
+  "commit": "daa72c51243991dfcaf9f9137d2c573d8f7790c0",
+  "model_id": "embeddinggemma2-st140",
+  "files": [
+    {
+      "path": "config.json",
+      "size": 5031,
+      "sha256": "8d011bfe08b5e345bbe0b81e5c6fd02c381920b345b986047bc2a33ce7b90d1d"
+    },
+    {
+      "path": "config_sentence_transformers.json",
+      "size": 1565,
+      "sha256": "031e56a498d33c349ab489a21885bcfe25b4fcba841149dc99e1e90d4a7c28f5"
+    },
+    {
+      "path": "preprocessor_config.json",
+      "size": 560,
+      "sha256": "9344893f8d0573a46ebb2ca54c03f56d044cea194c8dcfb1f4d652240ac21daa"
+    },
+    {
+      "path": "processor_config.json",
+      "size": 1788,
+      "sha256": "168f6a08522f3ce5dea596d94d003af2fd691742d4f41fe1f9d8cce76bfbf69c"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size": 1599,
+      "sha256": "17bd5d6e9364ca49a534e1502076593317c298d4a663623091ed45388f004874"
+    },
+    {
+      "path": "tokenizer.json",
+      "size": 32170510,
+      "sha256": "4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4"
+    },
+    {
+      "path": "onnx/model_quantized.onnx",
+      "size": 495165,
+      "sha256": "d06edd601f851c633a2519304cbeb8dc6170d7ceb61b436625c17fb9b6e74953"
+    },
+    {
+      "path": "onnx/model_quantized.onnx_data",
+      "size": 313724928,
+      "sha256": "278a7ff1248c3618e4bd11a607fc54f7bdc7778854230f3956d3f86bd9db4f3b"
+    },
+    {
+      "path": "onnx/vision_encoder_quantized.onnx",
+      "size": 162495,
+      "sha256": "bb0de2df53a2448a32dc7908a187c168c8afd514d4d6f674f7f46024875fa4e3"
+    },
+    {
+      "path": "onnx/vision_encoder_quantized.onnx_data",
+      "size": 195228672,
+      "sha256": "3dabd69c0a36e9a8771ad82030dde74daa5a0e02b7047a5d3f3382b1137bab89"
+    }
+  ]
+}

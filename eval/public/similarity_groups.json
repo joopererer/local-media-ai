@@ -1,0 +1,125 @@
+{
+ "note": "以图搜图期望组：同组图片应互为最近邻（same_subject 同场景连拍，same_category 同类不同场景）",
+ "groups": [
+  {
+   "id": "sim-chairs",
+   "kind": "same_subject",
+   "files": [
+    "object-151311410.jpg",
+    "object-151311409.jpg",
+    "object-151311411.jpg"
+   ],
+   "idx": [
+    25,
+    26,
+    27
+   ]
+  },
+  {
+   "id": "sim-coffee",
+   "kind": "same_category",
+   "files": [
+    "object-174953164.jpg",
+    "object-61715726.jpg",
+    "object-62122968.jpg"
+   ],
+   "idx": [
+    22,
+    23,
+    24
+   ]
+  },
+  {
+   "id": "sim-sunset",
+   "kind": "same_category",
+   "files": [
+    "landscape-163193192.jpg",
+    "landscape-61898374.jpg",
+    "landscape-194181667.jpg"
+   ],
+   "idx": [
+    13,
+    14,
+    15
+   ]
+  },
+  {
+   "id": "sim-forest",
+   "kind": "same_category",
+   "files": [
+    "landscape-198596742.jpg",
+    "landscape-159339014.jpg"
+   ],
+   "idx": [
+    16,
+    17
+   ]
+  },
+  {
+   "id": "sim-lake",
+   "kind": "same_category",
+   "files": [
+    "landscape-117648128.jpg",
+    "landscape-199853967.jpg"
+   ],
+   "idx": [
+    10,
+    11
+   ]
+  },
+  {
+   "id": "sim-living",
+   "kind": "same_category",
+   "files": [
+    "indoor-89046296.jpg",
+    "indoor-150610403.jpg",
+    "indoor-196624674.png"
+   ],
+   "idx": [
+    31,
+    32,
+    33
+   ]
+  },
+  {
+   "id": "sim-guitar",
+   "kind": "same_category",
+   "files": [
+    "object-86334911.jpg",
+    "object-116872725.jpg"
+   ],
+   "idx": [
+    28,
+    29
+   ]
+  },
+  {
+   "id": "sim-bikesign",
+   "kind": "same_category",
+   "files": [
+    "object-149978837.jpg",
+    "object-73587539.jpg"
+   ],
+   "idx": [
+    20,
+    21
+   ]
+  },
+  {
+   "id": "sim-portrait",
+   "kind": "same_category",
+   "files": [
+    "person-57670248.jpg",
+    "person-57671448.jpg",
+    "person-27554267.jpg",
+    "person-145870434.jpg"
+   ],
+   "idx": [
+    1,
+    2,
+    4,
+    5
+   ]
+  }
+ ]
+}

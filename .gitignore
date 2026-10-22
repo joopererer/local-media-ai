@@ -5,12 +5,21 @@
 # Local runtimes, models and imported libraries (never committed)
 /llama/
 /runtime/
-/models/
 *.lib
 *.dll
 *.so
 *.dylib
 *.zip
+
+# Model weights are never committed; only the download manifests under
+# models/ are (they carry the pinned sha256 of every file).
+/models/*
+!/models/*.json
+
+# Evaluation runs (regenerable; only the public baseline is committed)
+eval/history/
+eval/golden/
+eval/private/
 
 # Python helpers
 __pycache__/

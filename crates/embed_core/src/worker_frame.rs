@@ -48,7 +48,12 @@ impl std::fmt::Display for FrameError {
 pub enum Request {
     Hello,
     Text(String),
-    Image { h: u32, w: u32, soft: u32, rgb: Vec<u8> },
+    Image {
+        h: u32,
+        w: u32,
+        soft: u32,
+        rgb: Vec<u8>,
+    },
     Shutdown,
     Cancel(u64),
 }
@@ -196,11 +201,7 @@ pub fn write_response(
 }
 
 /// 写 hello 响应（payload 为 JSON 字符串）。
-pub fn write_hello_response(
-    w: &mut impl Write,
-    req_id: u64,
-    json: &str,
-) -> Result<(), FrameError> {
+pub fn write_hello_response(w: &mut impl Write, req_id: u64, json: &str) -> Result<(), FrameError> {
     let mut body = Vec::new();
     body.extend_from_slice(&req_id.to_le_bytes());
     body.push(STATUS_OK);
@@ -219,7 +220,8 @@ pub type Response = (u64, Result<(Vec<f32>, f64), String>);
 
 pub fn read_response(r: &mut impl Read) -> Result<Response, FrameError> {
     let mut len_b = [0u8; 4];
-    r.read_exact(&mut len_b).map_err(|_| FrameError::Truncated)?;
+    r.read_exact(&mut len_b)
+        .map_err(|_| FrameError::Truncated)?;
     let len = u32::from_le_bytes(len_b);
     if !(10..=MAX_FRAME).contains(&len) {
         return Err(FrameError::TooLarge(len));

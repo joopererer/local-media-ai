@@ -15,10 +15,10 @@
 
 use embed_core::worker_frame::{read_response, write_request, Request};
 use embed_core::{init_ort, Embedder};
-use std::io::{BufReader, BufWriter};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::collections::{HashMap, HashSet};
+use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 fn arg(args: &[String], name: &str) -> Option<String> {
     args.iter()
@@ -50,7 +50,10 @@ impl Backend {
     /// 图片向量：ORT 走文件路径；worker 走"文件 → SharedPixels → stdio 帧"（不走 PNG）。
     fn embed_image_file(&mut self, path: &std::path::Path, soft: u32) -> Result<Vec<f32>, String> {
         match self {
-            Backend::Ort(e) => Ok(e.embed_image_file(path, soft, false).map_err(|e| e.to_string())?.vector),
+            Backend::Ort(e) => Ok(e
+                .embed_image_file(path, soft, false)
+                .map_err(|e| e.to_string())?
+                .vector),
             Backend::Worker(w) => w.embed_image_file(path, soft),
         }
     }
@@ -242,8 +245,7 @@ fn eval_text_queries(
             scored.sort_by(|a, b| b.1.total_cmp(&a.1));
             let ranked: Vec<String> = scored.iter().map(|(f, _)| (*f).clone()).collect();
             let want: HashSet<&str> = exp.hit.iter().map(String::as_str).collect();
-            let top: HashSet<&str> =
-                ranked.iter().take(top_k).map(String::as_str).collect();
+            let top: HashSet<&str> = ranked.iter().take(top_k).map(String::as_str).collect();
             let hits = want.intersection(&top).count();
             hit_sum += hits;
             hit_n += want.len();
@@ -258,8 +260,16 @@ fn eval_text_queries(
             }));
         }
     }
-    let recall = if hit_n > 0 { hit_sum as f64 / hit_n as f64 } else { 1.0 };
-    let first = if !rows.is_empty() { first_hit as f64 / rows.len() as f64 } else { 1.0 };
+    let recall = if hit_n > 0 {
+        hit_sum as f64 / hit_n as f64
+    } else {
+        1.0
+    };
+    let first = if !rows.is_empty() {
+        first_hit as f64 / rows.len() as f64
+    } else {
+        1.0
+    };
     (rows, recall, first)
 }
 
@@ -276,8 +286,7 @@ fn eval_image_queries(
     let (mut fp_q, mut fp_n) = (0usize, 0usize);
     let mut rows = Vec::new();
     for g in groups {
-        let members: Vec<&String> =
-            g.files.iter().filter(|f| lib.contains_key(*f)).collect();
+        let members: Vec<&String> = g.files.iter().filter(|f| lib.contains_key(*f)).collect();
         if members.len() < 2 {
             continue;
         }
@@ -290,10 +299,12 @@ fn eval_image_queries(
                 .collect();
             scored.sort_by(|a, b| b.1.total_cmp(&a.1));
             let ranked: Vec<&String> = scored.iter().map(|(f, _)| *f).collect();
-            let want: HashSet<&String> =
-                members.iter().filter(|m| m.as_str() != q.as_str()).copied().collect();
-            let top: HashSet<&String> =
-                ranked.iter().take(top_k).cloned().collect();
+            let want: HashSet<&String> = members
+                .iter()
+                .filter(|m| m.as_str() != q.as_str())
+                .copied()
+                .collect();
+            let top: HashSet<&String> = ranked.iter().take(top_k).cloned().collect();
             let hits = want.intersection(&top).count();
             if g.hard_negative {
                 // 难负样本：组员本不应互相关；记录"误命中"（有组员进入 top-K 的查询占比）。
@@ -317,8 +328,16 @@ fn eval_image_queries(
             }));
         }
     }
-    let recall = if hit_n > 0 { hit_sum as f64 / hit_n as f64 } else { 1.0 };
-    let fp_rate = if fp_n > 0 { Some(fp_q as f64 / fp_n as f64) } else { None };
+    let recall = if hit_n > 0 {
+        hit_sum as f64 / hit_n as f64
+    } else {
+        1.0
+    };
+    let fp_rate = if fp_n > 0 {
+        Some(fp_q as f64 / fp_n as f64)
+    } else {
+        None
+    };
     (rows, recall, fp_rate)
 }
 
@@ -396,8 +415,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- 查询与期望（公开集 golden）
     let queries: Vec<Query> = read_jsonl(&need("--queries"));
-    let expects: HashMap<String, Expect> =
-        read_jsonl::<Expect>(&need("--expected")).into_iter().map(|e| (e.query_id.clone(), e)).collect();
+    let expects: HashMap<String, Expect> = read_jsonl::<Expect>(&need("--expected"))
+        .into_iter()
+        .map(|e| (e.query_id.clone(), e))
+        .collect();
     let sim: Vec<SimGroup> = read_jsonl(&need("--sim"));
 
     // 公开以图搜图排除"已排除"图片（不适合评测的内容）
@@ -495,14 +516,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     println!("== 以图搜图 recall@{top_k} ==");
-    println!("   公开: recall={:.4} ({} 组内查询)", pub_img_recall, pub_img_rows.len());
+    println!(
+        "   公开: recall={:.4} ({} 组内查询)",
+        pub_img_recall,
+        pub_img_rows.len()
+    );
     if let Some(p) = &priv_block {
         // 私密组是难负样本：报误命中率（组员互进 top-K 的查询占比，越低越好），不计 recall。
         let fp = p["image2image"]["false_hit_rate"].as_f64();
         println!(
             "   私密（难负样本）: 误命中率={} ({} 组内查询)",
             fp.map_or("n/a".to_string(), |v| format!("{v:.4}")),
-            p["image2image"].as_object().unwrap()["groups"].as_array().unwrap().len()
+            p["image2image"].as_object().unwrap()["groups"]
+                .as_array()
+                .unwrap()
+                .len()
         );
     }
     for r in &pub_text_rows {

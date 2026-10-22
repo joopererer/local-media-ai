@@ -2,7 +2,7 @@
 name = "llama_worker"
 version.workspace = true
 edition.workspace = true
-description = "27.5: llama.cpp embedding worker (stdio frames). Talks to fo_core router only."
+description = "llama.cpp embedding worker (stdio frames). Talks to the embed_router crate only."
 
 [[bin]]
 name = "llama-embed-worker"

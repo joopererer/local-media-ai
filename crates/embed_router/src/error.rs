@@ -1,9 +1,9 @@
 //! 嵌入路由与工作进程监管使用的错误类型。
 //!
-//! 该类型原先定义在 `fo_core::api::embedding`（与 Dart 侧的 FRB 接口同层）。
-//! 拆分为独立 crate 后，路由层自带一份等价定义；File Organizer 侧仍在
-//! `fo_core::api::embedding` 保留 FRB 可见的那份，并在边界处做 `From` 转换，
-//! 以保证 Dart 侧枚举名与生成代码**完全不变**。
+//! 该类型原先定义在应用绑定层（File Organizer 的 `fo_core::api::embedding`，与 Dart 侧的
+//! FRB 接口同层）。拆分为独立 crate 后，路由层自带一份等价定义；应用侧仍在自己的
+//! `api::embedding` 保留 FRB 可见的那份，并在边界处做 `From` 转换，以保证 Dart 侧
+//! 枚举名与生成代码**完全不变**。
 
 use embed_core::EmbedError;
 

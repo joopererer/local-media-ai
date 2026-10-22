@@ -24,9 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .skip(1)
         .filter(|a| !a.starts_with("--"))
-        .filter(|a| {
-            a.ends_with(".png") || a.ends_with(".jpg") || a.ends_with(".jpeg")
-        })
+        .filter(|a| a.ends_with(".png") || a.ends_with(".jpg") || a.ends_with(".jpeg"))
         .cloned()
         .collect();
     assert!(!imgs.is_empty(), "请给出图片路径");

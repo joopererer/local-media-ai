@@ -1,0 +1,1209 @@
+{
+  "backend": "ort-cpu",
+  "private": null,
+  "public": {
+    "image2image": {
+      "groups": [
+        {
+          "first_rank": 1,
+          "group": "sim-chairs",
+          "hard_negative": false,
+          "kind": "same_subject",
+          "nmembers": 2,
+          "query": "object-151311410.jpg",
+          "recall": 2,
+          "top": [
+            "object-151311409.jpg",
+            "object-151311411.jpg",
+            "indoor-158734074.jpg",
+            "indoor-61880111.jpg",
+            "landscape-58741483.jpg",
+            "indoor-150610403.jpg",
+            "object-174953164.jpg",
+            "object-118337508.png",
+            "object-116872725.jpg",
+            "person-41882707.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-chairs",
+          "hard_negative": false,
+          "kind": "same_subject",
+          "nmembers": 2,
+          "query": "object-151311409.jpg",
+          "recall": 2,
+          "top": [
+            "object-151311410.jpg",
+            "object-151311411.jpg",
+            "object-174953164.jpg",
+            "indoor-158734074.jpg",
+            "indoor-61880111.jpg",
+            "landscape-58741483.jpg",
+            "object-118337508.png",
+            "object-116872725.jpg",
+            "object-86334911.jpg",
+            "indoor-150610403.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-chairs",
+          "hard_negative": false,
+          "kind": "same_subject",
+          "nmembers": 2,
+          "query": "object-151311411.jpg",
+          "recall": 2,
+          "top": [
+            "object-151311409.jpg",
+            "object-151311410.jpg",
+            "indoor-158734074.jpg",
+            "object-174953164.jpg",
+            "indoor-61880111.jpg",
+            "landscape-195354281.jpg",
+            "object-62122968.jpg",
+            "landscape-159339014.jpg",
+            "landscape-58741483.jpg",
+            "landscape-198596742.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-coffee",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "object-174953164.jpg",
+          "recall": 2,
+          "top": [
+            "object-62122968.jpg",
+            "object-61715726.jpg",
+            "object-151311409.jpg",
+            "indoor-150610403.jpg",
+            "object-151311411.jpg",
+            "landscape-58741483.jpg",
+            "object-116872725.jpg",
+            "landscape-199853967.jpg",
+            "landscape-159339014.jpg",
+            "indoor-196624674.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-coffee",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "object-61715726.jpg",
+          "recall": 2,
+          "top": [
+            "object-62122968.jpg",
+            "object-174953164.jpg",
+            "indoor-158734074.jpg",
+            "object-191913148.jpg",
+            "indoor-61880111.jpg",
+            "landscape-199853967.jpg",
+            "landscape-58741483.jpg",
+            "object-116872725.jpg",
+            "landscape-198596742.jpg",
+            "person-27554267.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-coffee",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "object-62122968.jpg",
+          "recall": 2,
+          "top": [
+            "object-61715726.jpg",
+            "object-174953164.jpg",
+            "indoor-158734074.jpg",
+            "landscape-199853967.jpg",
+            "indoor-150610403.jpg",
+            "object-151311411.jpg",
+            "landscape-159339014.jpg",
+            "landscape-61898374.jpg",
+            "indoor-61880111.jpg",
+            "object-118337508.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-sunset",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "landscape-163193192.jpg",
+          "recall": 2,
+          "top": [
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "landscape-195354281.jpg",
+            "landscape-159339014.jpg",
+            "indoor-150610403.jpg",
+            "landscape-117648128.jpg",
+            "landscape-198596742.jpg",
+            "landscape-199853967.jpg",
+            "person-68598168.jpg",
+            "landscape-58741483.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-sunset",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "landscape-61898374.jpg",
+          "recall": 2,
+          "top": [
+            "landscape-194181667.jpg",
+            "landscape-163193192.jpg",
+            "landscape-159339014.jpg",
+            "indoor-150610403.jpg",
+            "landscape-199853967.jpg",
+            "landscape-58741483.jpg",
+            "landscape-195354281.jpg",
+            "person-61766159.jpg",
+            "landscape-117648128.jpg",
+            "object-86334911.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-sunset",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "landscape-194181667.jpg",
+          "recall": 2,
+          "top": [
+            "landscape-61898374.jpg",
+            "landscape-163193192.jpg",
+            "landscape-199853967.jpg",
+            "landscape-159339014.jpg",
+            "landscape-198596742.jpg",
+            "landscape-195354281.jpg",
+            "indoor-150610403.jpg",
+            "landscape-117648128.jpg",
+            "person-61766159.jpg",
+            "landscape-58741483.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "group": "sim-forest",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "landscape-198596742.jpg",
+          "recall": 1,
+          "top": [
+            "landscape-195354281.jpg",
+            "landscape-159339014.jpg",
+            "landscape-199853967.jpg",
+            "object-191913148.jpg",
+            "landscape-117648128.jpg",
+            "object-73587539.jpg",
+            "landscape-194181667.jpg",
+            "landscape-163193192.jpg",
+            "landscape-58741483.jpg",
+            "object-116872725.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "group": "sim-forest",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "landscape-159339014.jpg",
+          "recall": 1,
+          "top": [
+            "landscape-195354281.jpg",
+            "landscape-198596742.jpg",
+            "landscape-199853967.jpg",
+            "landscape-117648128.jpg",
+            "landscape-61898374.jpg",
+            "landscape-58741483.jpg",
+            "landscape-163193192.jpg",
+            "object-73587539.jpg",
+            "landscape-194181667.jpg",
+            "person-61766159.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-lake",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "landscape-117648128.jpg",
+          "recall": 1,
+          "top": [
+            "landscape-199853967.jpg",
+            "landscape-198596742.jpg",
+            "landscape-159339014.jpg",
+            "landscape-195354281.jpg",
+            "landscape-58741483.jpg",
+            "landscape-163193192.jpg",
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "person-57670248.jpg",
+            "object-174953164.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-lake",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "landscape-199853967.jpg",
+          "recall": 1,
+          "top": [
+            "landscape-117648128.jpg",
+            "landscape-195354281.jpg",
+            "landscape-198596742.jpg",
+            "landscape-159339014.jpg",
+            "landscape-58741483.jpg",
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "object-191913148.jpg",
+            "person-57670248.jpg",
+            "landscape-163193192.jpg"
+          ]
+        },
+        {
+          "first_rank": 12,
+          "group": "sim-living",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "indoor-89046296.jpg",
+          "recall": 0,
+          "top": [
+            "landscape-58741483.jpg",
+            "indoor-158734074.jpg",
+            "object-118337508.png",
+            "person-41882707.jpg",
+            "landscape-163193192.jpg",
+            "person-57671448.jpg",
+            "indoor-57669992.jpg",
+            "landscape-195354281.jpg",
+            "person-68598168.jpg",
+            "landscape-159339014.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-living",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "indoor-150610403.jpg",
+          "recall": 1,
+          "top": [
+            "indoor-196624674.png",
+            "indoor-61880111.jpg",
+            "landscape-163193192.jpg",
+            "landscape-61898374.jpg",
+            "object-174953164.jpg",
+            "object-118337508.png",
+            "landscape-58741483.jpg",
+            "landscape-194181667.jpg",
+            "landscape-199853967.jpg",
+            "object-151311410.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-living",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 2,
+          "query": "indoor-196624674.png",
+          "recall": 1,
+          "top": [
+            "indoor-150610403.jpg",
+            "indoor-61880111.jpg",
+            "object-174953164.jpg",
+            "landscape-199853967.jpg",
+            "object-151311409.jpg",
+            "object-151311410.jpg",
+            "landscape-195354281.jpg",
+            "indoor-158734074.jpg",
+            "object-62122968.jpg",
+            "object-151311411.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "group": "sim-guitar",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "object-86334911.jpg",
+          "recall": 1,
+          "top": [
+            "person-68598168.jpg",
+            "object-116872725.jpg",
+            "object-118337508.png",
+            "landscape-58741483.jpg",
+            "landscape-61898374.jpg",
+            "person-41882707.jpg",
+            "object-151311409.jpg",
+            "indoor-57669992.jpg",
+            "person-25165605.jpg",
+            "landscape-194181667.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "group": "sim-guitar",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "object-116872725.jpg",
+          "recall": 1,
+          "top": [
+            "object-118337508.png",
+            "object-86334911.jpg",
+            "landscape-58741483.jpg",
+            "object-174953164.jpg",
+            "landscape-198596742.jpg",
+            "landscape-195354281.jpg",
+            "object-191913148.jpg",
+            "object-151311409.jpg",
+            "landscape-159339014.jpg",
+            "landscape-194181667.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "group": "sim-bikesign",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "object-149978837.jpg",
+          "recall": 1,
+          "top": [
+            "object-191913148.jpg",
+            "object-73587539.jpg",
+            "indoor-158734074.jpg",
+            "landscape-195354281.jpg",
+            "landscape-198596742.jpg",
+            "indoor-61880111.jpg",
+            "landscape-159339014.jpg",
+            "landscape-199853967.jpg",
+            "object-174953164.jpg",
+            "indoor-89046296.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "group": "sim-bikesign",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 1,
+          "query": "object-73587539.jpg",
+          "recall": 1,
+          "top": [
+            "object-191913148.jpg",
+            "object-149978837.jpg",
+            "landscape-195354281.jpg",
+            "landscape-198596742.jpg",
+            "landscape-159339014.jpg",
+            "person-62056412.jpg",
+            "landscape-199853967.jpg",
+            "landscape-58741483.jpg",
+            "landscape-61898374.jpg",
+            "object-62122968.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-portrait",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 3,
+          "query": "person-57670248.jpg",
+          "recall": 3,
+          "top": [
+            "person-57671448.jpg",
+            "person-145870434.jpg",
+            "person-27554267.jpg",
+            "landscape-58741483.jpg",
+            "indoor-57669992.jpg",
+            "landscape-199853967.jpg",
+            "person-41882707.jpg",
+            "landscape-117648128.jpg",
+            "object-118337508.png",
+            "landscape-159339014.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-portrait",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 3,
+          "query": "person-57671448.jpg",
+          "recall": 3,
+          "top": [
+            "person-57670248.jpg",
+            "person-145870434.jpg",
+            "person-41882707.jpg",
+            "person-27554267.jpg",
+            "person-25165605.jpg",
+            "indoor-89046296.jpg",
+            "landscape-58741483.jpg",
+            "indoor-57669992.jpg",
+            "person-61766159.jpg",
+            "person-68598168.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-portrait",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 3,
+          "query": "person-27554267.jpg",
+          "recall": 3,
+          "top": [
+            "person-145870434.jpg",
+            "person-57670248.jpg",
+            "indoor-57669992.jpg",
+            "person-57671448.jpg",
+            "person-68598168.jpg",
+            "object-86334911.jpg",
+            "landscape-58741483.jpg",
+            "object-61715726.jpg",
+            "person-41882707.jpg",
+            "object-118337508.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "group": "sim-portrait",
+          "hard_negative": false,
+          "kind": "same_category",
+          "nmembers": 3,
+          "query": "person-145870434.jpg",
+          "recall": 3,
+          "top": [
+            "person-27554267.jpg",
+            "person-57670248.jpg",
+            "person-57671448.jpg",
+            "indoor-57669992.jpg",
+            "person-68598168.jpg",
+            "landscape-58741483.jpg",
+            "person-41882707.jpg",
+            "indoor-89046296.jpg",
+            "object-118337508.png",
+            "landscape-199853967.jpg"
+          ]
+        }
+      ],
+      "recall": 0.9090909090909091
+    },
+    "n_images": 36,
+    "text2image": {
+      "first_hit_rate": 0.9722222222222222,
+      "queries": [
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 3,
+          "query": "q01",
+          "recall": 3,
+          "top": [
+            "object-151311411.jpg",
+            "object-151311409.jpg",
+            "object-151311410.jpg",
+            "object-174953164.jpg",
+            "indoor-150610403.jpg",
+            "indoor-61880111.jpg",
+            "indoor-158734074.jpg",
+            "object-62122968.jpg",
+            "landscape-195354281.jpg",
+            "landscape-58741483.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 3,
+          "query": "q01",
+          "recall": 3,
+          "top": [
+            "object-151311411.jpg",
+            "object-151311410.jpg",
+            "object-151311409.jpg",
+            "indoor-158734074.jpg",
+            "indoor-61880111.jpg",
+            "indoor-150610403.jpg",
+            "object-174953164.jpg",
+            "object-149978837.jpg",
+            "indoor-196624674.png",
+            "object-62122968.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q02",
+          "recall": 2,
+          "top": [
+            "object-116872725.jpg",
+            "object-86334911.jpg",
+            "object-118337508.png",
+            "object-151311411.jpg",
+            "person-41882707.jpg",
+            "object-151311409.jpg",
+            "landscape-58741483.jpg",
+            "object-151311410.jpg",
+            "landscape-199853967.jpg",
+            "person-62056412.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q02",
+          "recall": 2,
+          "top": [
+            "object-116872725.jpg",
+            "object-86334911.jpg",
+            "object-118337508.png",
+            "landscape-58741483.jpg",
+            "object-151311410.jpg",
+            "object-151311409.jpg",
+            "person-41882707.jpg",
+            "indoor-150610403.jpg",
+            "object-151311411.jpg",
+            "indoor-61880111.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 3,
+          "query": "q03",
+          "recall": 3,
+          "top": [
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "landscape-163193192.jpg",
+            "indoor-150610403.jpg",
+            "landscape-117648128.jpg",
+            "landscape-159339014.jpg",
+            "object-116872725.jpg",
+            "landscape-199853967.jpg",
+            "landscape-58741483.jpg",
+            "object-174953164.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 3,
+          "query": "q03",
+          "recall": 3,
+          "top": [
+            "landscape-163193192.jpg",
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "indoor-150610403.jpg",
+            "indoor-57669992.jpg",
+            "landscape-58741483.jpg",
+            "landscape-117648128.jpg",
+            "landscape-159339014.jpg",
+            "landscape-199853967.jpg",
+            "object-116872725.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 1,
+          "query": "q04",
+          "recall": 1,
+          "top": [
+            "landscape-163193192.jpg",
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "indoor-150610403.jpg",
+            "landscape-58741483.jpg",
+            "person-62056412.jpg",
+            "person-61766159.jpg",
+            "object-73587539.jpg",
+            "indoor-89046296.jpg",
+            "person-68598168.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 1,
+          "query": "q04",
+          "recall": 1,
+          "top": [
+            "landscape-163193192.jpg",
+            "landscape-194181667.jpg",
+            "landscape-61898374.jpg",
+            "indoor-150610403.jpg",
+            "person-62056412.jpg",
+            "landscape-58741483.jpg",
+            "landscape-159339014.jpg",
+            "indoor-89046296.jpg",
+            "indoor-57669992.jpg",
+            "object-73587539.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q05",
+          "recall": 2,
+          "top": [
+            "landscape-198596742.jpg",
+            "landscape-195354281.jpg",
+            "landscape-159339014.jpg",
+            "object-191913148.jpg",
+            "landscape-117648128.jpg",
+            "object-73587539.jpg",
+            "landscape-199853967.jpg",
+            "object-149978837.jpg",
+            "person-61766159.jpg",
+            "landscape-58741483.jpg"
+          ]
+        },
+        {
+          "first_rank": 2,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q05",
+          "recall": 2,
+          "top": [
+            "landscape-195354281.jpg",
+            "landscape-198596742.jpg",
+            "landscape-159339014.jpg",
+            "landscape-117648128.jpg",
+            "landscape-58741483.jpg",
+            "landscape-199853967.jpg",
+            "object-191913148.jpg",
+            "object-73587539.jpg",
+            "person-57670248.jpg",
+            "indoor-57669992.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q06",
+          "recall": 2,
+          "top": [
+            "landscape-199853967.jpg",
+            "landscape-117648128.jpg",
+            "landscape-159339014.jpg",
+            "landscape-195354281.jpg",
+            "landscape-198596742.jpg",
+            "landscape-58741483.jpg",
+            "person-57670248.jpg",
+            "indoor-150610403.jpg",
+            "object-191913148.jpg",
+            "indoor-196624674.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q06",
+          "recall": 2,
+          "top": [
+            "landscape-199853967.jpg",
+            "landscape-117648128.jpg",
+            "landscape-58741483.jpg",
+            "person-57670248.jpg",
+            "indoor-150610403.jpg",
+            "landscape-61898374.jpg",
+            "landscape-159339014.jpg",
+            "person-57671448.jpg",
+            "landscape-198596742.jpg",
+            "indoor-61880111.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 3,
+          "query": "q07",
+          "recall": 2,
+          "top": [
+            "indoor-196624674.png",
+            "indoor-150610403.jpg",
+            "object-151311411.jpg",
+            "object-151311409.jpg",
+            "object-151311410.jpg",
+            "object-174953164.jpg",
+            "indoor-61880111.jpg",
+            "indoor-57669992.jpg",
+            "indoor-158734074.jpg",
+            "object-62122968.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 3,
+          "query": "q07",
+          "recall": 3,
+          "top": [
+            "indoor-196624674.png",
+            "indoor-150610403.jpg",
+            "object-151311410.jpg",
+            "object-151311411.jpg",
+            "indoor-57669992.jpg",
+            "object-151311409.jpg",
+            "object-174953164.jpg",
+            "indoor-61880111.jpg",
+            "indoor-89046296.jpg",
+            "indoor-158734074.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q08",
+          "recall": 2,
+          "top": [
+            "indoor-61880111.jpg",
+            "indoor-57669992.jpg",
+            "object-151311411.jpg",
+            "indoor-158734074.jpg",
+            "object-151311409.jpg",
+            "object-151311410.jpg",
+            "object-61715726.jpg",
+            "object-174953164.jpg",
+            "object-62122968.jpg",
+            "indoor-196624674.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q08",
+          "recall": 2,
+          "top": [
+            "indoor-61880111.jpg",
+            "indoor-158734074.jpg",
+            "indoor-57669992.jpg",
+            "object-151311410.jpg",
+            "object-151311409.jpg",
+            "object-151311411.jpg",
+            "object-61715726.jpg",
+            "indoor-196624674.png",
+            "object-174953164.jpg",
+            "object-62122968.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 3,
+          "query": "q09",
+          "recall": 3,
+          "top": [
+            "object-62122968.jpg",
+            "object-174953164.jpg",
+            "object-61715726.jpg",
+            "indoor-150610403.jpg",
+            "indoor-158734074.jpg",
+            "landscape-117648128.jpg",
+            "object-151311411.jpg",
+            "landscape-58741483.jpg",
+            "object-149978837.jpg",
+            "object-151311409.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 3,
+          "query": "q09",
+          "recall": 3,
+          "top": [
+            "object-174953164.jpg",
+            "object-62122968.jpg",
+            "object-61715726.jpg",
+            "landscape-58741483.jpg",
+            "indoor-158734074.jpg",
+            "indoor-150610403.jpg",
+            "landscape-117648128.jpg",
+            "indoor-57669992.jpg",
+            "indoor-61880111.jpg",
+            "object-151311411.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q10",
+          "recall": 2,
+          "top": [
+            "object-62122968.jpg",
+            "object-174953164.jpg",
+            "object-61715726.jpg",
+            "person-57670248.jpg",
+            "indoor-150610403.jpg",
+            "landscape-199853967.jpg",
+            "person-25165605.jpg",
+            "object-118337508.png",
+            "object-149978837.jpg",
+            "object-116872725.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q10",
+          "recall": 2,
+          "top": [
+            "object-62122968.jpg",
+            "object-61715726.jpg",
+            "object-174953164.jpg",
+            "landscape-58741483.jpg",
+            "indoor-196624674.png",
+            "landscape-117648128.jpg",
+            "indoor-150610403.jpg",
+            "person-57670248.jpg",
+            "landscape-199853967.jpg",
+            "indoor-57669992.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q11",
+          "recall": 2,
+          "top": [
+            "object-73587539.jpg",
+            "object-149978837.jpg",
+            "object-191913148.jpg",
+            "person-62056412.jpg",
+            "landscape-198596742.jpg",
+            "landscape-195354281.jpg",
+            "landscape-159339014.jpg",
+            "landscape-58741483.jpg",
+            "landscape-199853967.jpg",
+            "object-86334911.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q11",
+          "recall": 2,
+          "top": [
+            "object-149978837.jpg",
+            "object-73587539.jpg",
+            "object-191913148.jpg",
+            "person-62056412.jpg",
+            "landscape-58741483.jpg",
+            "landscape-198596742.jpg",
+            "landscape-195354281.jpg",
+            "indoor-158734074.jpg",
+            "person-25165605.jpg",
+            "object-61715726.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 2,
+          "query": "q12",
+          "recall": 2,
+          "top": [
+            "person-61766159.jpg",
+            "person-62056412.jpg",
+            "landscape-163193192.jpg",
+            "person-41882707.jpg",
+            "landscape-195354281.jpg",
+            "object-73587539.jpg",
+            "object-191913148.jpg",
+            "landscape-194181667.jpg",
+            "indoor-89046296.jpg",
+            "landscape-198596742.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 2,
+          "query": "q12",
+          "recall": 2,
+          "top": [
+            "person-61766159.jpg",
+            "person-62056412.jpg",
+            "landscape-163193192.jpg",
+            "landscape-194181667.jpg",
+            "object-73587539.jpg",
+            "landscape-195354281.jpg",
+            "landscape-61898374.jpg",
+            "landscape-58741483.jpg",
+            "person-41882707.jpg",
+            "indoor-89046296.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 1,
+          "query": "q13",
+          "recall": 1,
+          "top": [
+            "person-61766159.jpg",
+            "landscape-58741483.jpg",
+            "indoor-57669992.jpg",
+            "person-62056412.jpg",
+            "landscape-117648128.jpg",
+            "landscape-61898374.jpg",
+            "indoor-89046296.jpg",
+            "landscape-163193192.jpg",
+            "object-174953164.jpg",
+            "object-118337508.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 1,
+          "query": "q13",
+          "recall": 1,
+          "top": [
+            "person-61766159.jpg",
+            "indoor-57669992.jpg",
+            "landscape-58741483.jpg",
+            "indoor-89046296.jpg",
+            "person-62056412.jpg",
+            "landscape-163193192.jpg",
+            "landscape-117648128.jpg",
+            "person-41882707.jpg",
+            "landscape-194181667.jpg",
+            "landscape-199853967.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 1,
+          "query": "q14",
+          "recall": 1,
+          "top": [
+            "person-68598168.jpg",
+            "indoor-57669992.jpg",
+            "person-41882707.jpg",
+            "person-27554267.jpg",
+            "object-86334911.jpg",
+            "landscape-58741483.jpg",
+            "person-145870434.jpg",
+            "indoor-89046296.jpg",
+            "landscape-199853967.jpg",
+            "landscape-163193192.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 1,
+          "query": "q14",
+          "recall": 1,
+          "top": [
+            "person-68598168.jpg",
+            "indoor-57669992.jpg",
+            "person-27554267.jpg",
+            "landscape-58741483.jpg",
+            "object-86334911.jpg",
+            "person-41882707.jpg",
+            "person-145870434.jpg",
+            "landscape-199853967.jpg",
+            "indoor-89046296.jpg",
+            "object-118337508.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 4,
+          "query": "q15",
+          "recall": 4,
+          "top": [
+            "person-145870434.jpg",
+            "person-27554267.jpg",
+            "person-57671448.jpg",
+            "person-57670248.jpg",
+            "indoor-57669992.jpg",
+            "person-41882707.jpg",
+            "indoor-89046296.jpg",
+            "person-68598168.jpg",
+            "landscape-58741483.jpg",
+            "object-118337508.png"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 4,
+          "query": "q15",
+          "recall": 4,
+          "top": [
+            "person-145870434.jpg",
+            "person-57671448.jpg",
+            "person-57670248.jpg",
+            "person-27554267.jpg",
+            "person-41882707.jpg",
+            "indoor-57669992.jpg",
+            "indoor-89046296.jpg",
+            "landscape-58741483.jpg",
+            "object-118337508.png",
+            "person-68598168.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 1,
+          "query": "q16",
+          "recall": 1,
+          "top": [
+            "person-25165605.jpg",
+            "indoor-57669992.jpg",
+            "person-41882707.jpg",
+            "person-57670248.jpg",
+            "object-118337508.png",
+            "person-57671448.jpg",
+            "indoor-89046296.jpg",
+            "object-149978837.jpg",
+            "landscape-163193192.jpg",
+            "person-68598168.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 1,
+          "query": "q16",
+          "recall": 1,
+          "top": [
+            "person-25165605.jpg",
+            "indoor-57669992.jpg",
+            "person-57670248.jpg",
+            "person-57671448.jpg",
+            "object-62122968.jpg",
+            "object-118337508.png",
+            "landscape-163193192.jpg",
+            "person-41882707.jpg",
+            "object-149978837.jpg",
+            "landscape-58741483.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 1,
+          "query": "q17",
+          "recall": 1,
+          "top": [
+            "person-41882707.jpg",
+            "object-118337508.png",
+            "person-57670248.jpg",
+            "person-61766159.jpg",
+            "person-68598168.jpg",
+            "person-57671448.jpg",
+            "indoor-57669992.jpg",
+            "person-25165605.jpg",
+            "landscape-58741483.jpg",
+            "object-86334911.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 1,
+          "query": "q17",
+          "recall": 1,
+          "top": [
+            "person-41882707.jpg",
+            "object-118337508.png",
+            "landscape-58741483.jpg",
+            "indoor-57669992.jpg",
+            "person-68598168.jpg",
+            "person-57670248.jpg",
+            "object-86334911.jpg",
+            "person-61766159.jpg",
+            "person-57671448.jpg",
+            "landscape-199853967.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "zh",
+          "nhit": 1,
+          "query": "q18",
+          "recall": 1,
+          "top": [
+            "indoor-57669992.jpg",
+            "indoor-158734074.jpg",
+            "indoor-61880111.jpg",
+            "person-27554267.jpg",
+            "person-41882707.jpg",
+            "person-57670248.jpg",
+            "person-57671448.jpg",
+            "landscape-58741483.jpg",
+            "object-61715726.jpg",
+            "object-151311411.jpg"
+          ]
+        },
+        {
+          "first_rank": 1,
+          "lang": "en",
+          "nhit": 1,
+          "query": "q18",
+          "recall": 1,
+          "top": [
+            "indoor-57669992.jpg",
+            "indoor-158734074.jpg",
+            "indoor-61880111.jpg",
+            "landscape-58741483.jpg",
+            "indoor-89046296.jpg",
+            "object-151311410.jpg",
+            "object-151311411.jpg",
+            "object-151311409.jpg",
+            "person-57671448.jpg",
+            "person-27554267.jpg"
+          ]
+        }
+      ],
+      "recall": 0.9861111111111112
+    }
+  },
+  "soft_tokens": 140,
+  "threads": 4,
+  "top_k": 10
+}

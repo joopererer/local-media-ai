@@ -13,10 +13,10 @@
 
 use crate::EmbedError;
 use image::metadata::Orientation;
-use image::{DynamicImage, ImageDecoder, ImageReader, RgbImage};
 use image::Limits;
-use std::path::Path;
+use image::{DynamicImage, ImageDecoder, ImageReader, RgbImage};
 use std::io::Read;
+use std::path::Path;
 
 pub const PATCH_SIZE: u32 = 16;
 pub const POOLING_KERNEL: u32 = 3;
@@ -64,7 +64,12 @@ impl SharedPixels {
     /// "RGB 像素 → 视觉特征"输入都由此产出（含 ONNX 的 pixel_values /
     /// position_ids / input_ids；给 llama.cpp 的路径见 [`SharedPixels::to_png`]）。
     pub fn patchify(&self) -> Result<ImageInputs, EmbedError> {
-        patchify_pixels(&self.rgb, self.size_hw.0, self.size_hw.1, self.max_soft_tokens)
+        patchify_pixels(
+            &self.rgb,
+            self.size_hw.0,
+            self.size_hw.1,
+            self.max_soft_tokens,
+        )
     }
     /// 兼容旧名（历史上返回 Result）。
     pub fn patchify_result(&self) -> Result<ImageInputs, EmbedError> {
@@ -303,12 +308,24 @@ pub fn patchify_pixels(
 
 /// 识别支持的图片格式（JPEG, PNG, GIF, BMP, TIFF, WebP）的魔数
 fn is_supported_image_magic(head: &[u8]) -> bool {
-    if head.starts_with(b"\xFF\xD8\xFF") { return true; } // JPEG
-    if head.starts_with(b"\x89PNG\r\n\x1a\n") { return true; } // PNG
-    if head.starts_with(b"GIF87a") || head.starts_with(b"GIF89a") { return true; } // GIF
-    if head.starts_with(b"BM") { return true; } // BMP
-    if head.starts_with(b"II\x2A\x00") || head.starts_with(b"MM\x00\x2A") { return true; } // TIFF
-    if head.len() >= 12 && head.starts_with(b"RIFF") && &head[8..12] == b"WEBP" { return true; } // WEBP
+    if head.starts_with(b"\xFF\xD8\xFF") {
+        return true;
+    } // JPEG
+    if head.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return true;
+    } // PNG
+    if head.starts_with(b"GIF87a") || head.starts_with(b"GIF89a") {
+        return true;
+    } // GIF
+    if head.starts_with(b"BM") {
+        return true;
+    } // BMP
+    if head.starts_with(b"II\x2A\x00") || head.starts_with(b"MM\x00\x2A") {
+        return true;
+    } // TIFF
+    if head.len() >= 12 && head.starts_with(b"RIFF") && &head[8..12] == b"WEBP" {
+        return true;
+    } // WEBP
     false
 }
 
@@ -373,7 +390,9 @@ pub fn load_rgb_image(path: &Path, skip_sniff: bool) -> Result<RgbImage, EmbedEr
         .map_err(|e| bad(format!("{name}: 无法读取: {e}")))?;
 
     if reader.format().is_none() {
-        return Err(EmbedError::UnsupportedImage(format!("{name}: 未能识别为支持的图片格式")));
+        return Err(EmbedError::UnsupportedImage(format!(
+            "{name}: 未能识别为支持的图片格式"
+        )));
     }
 
     let mut limits = Limits::default();
@@ -389,29 +408,32 @@ pub fn load_rgb_image(path: &Path, skip_sniff: bool) -> Result<RgbImage, EmbedEr
             )));
         }
     }
-    let mut decoder = reader
-        .into_decoder()
-        .map_err(|e| match e {
-            image::ImageError::Unsupported(_) => {
-                EmbedError::UnsupportedImage(format!("{name}: 不支持的图片格式: {e}"))
-            }
-            image::ImageError::Limits(_) => {
-                EmbedError::ImageTooLarge(format!("{name}: 图片过大或分配超限: {e}"))
-            }
-            _ => bad(format!("{name}: 文件损坏或无法解码: {e}")),
-        })?;
+    let mut decoder = reader.into_decoder().map_err(|e| match e {
+        image::ImageError::Unsupported(_) => {
+            EmbedError::UnsupportedImage(format!("{name}: 不支持的图片格式: {e}"))
+        }
+        image::ImageError::Limits(_) => {
+            EmbedError::ImageTooLarge(format!("{name}: 图片过大或分配超限: {e}"))
+        }
+        _ => bad(format!("{name}: 文件损坏或无法解码: {e}")),
+    })?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
-    let mut img =
-        DynamicImage::from_decoder(decoder).map_err(|e| match e {
-            image::ImageError::Limits(_) => EmbedError::ImageTooLarge(format!("{name}: 解码时内存分配超限: {e}")),
-            _ => bad(format!("{name}: 解码失败: {e}")),
-        })?;
+    let mut img = DynamicImage::from_decoder(decoder).map_err(|e| match e {
+        image::ImageError::Limits(_) => {
+            EmbedError::ImageTooLarge(format!("{name}: 解码时内存分配超限: {e}"))
+        }
+        _ => bad(format!("{name}: 解码失败: {e}")),
+    })?;
     img.apply_orientation(orientation);
     Ok(img.to_rgb8())
 }
 
 /// 读取图片文件并预处理。
-pub fn prepare_image_file(path: &Path, max_soft_tokens: u32, skip_sniff: bool) -> Result<ImageInputs, EmbedError> {
+pub fn prepare_image_file(
+    path: &Path,
+    max_soft_tokens: u32,
+    skip_sniff: bool,
+) -> Result<ImageInputs, EmbedError> {
     shared_pixels_file(path, max_soft_tokens, skip_sniff)?.patchify_result()
 }
 
@@ -431,7 +453,13 @@ pub fn shared_pixels_from_image(
     let rgb: Vec<u8> = if th == h && tw == w {
         img.as_raw().clone()
     } else {
-        resize_bicubic_aa(img.as_raw(), w as usize, h as usize, tw as usize, th as usize)
+        resize_bicubic_aa(
+            img.as_raw(),
+            w as usize,
+            h as usize,
+            tw as usize,
+            th as usize,
+        )
     };
     Ok(SharedPixels {
         rgb,
@@ -468,8 +496,6 @@ mod tests {
         ];
         assert!(!jpeg_is_complete(&trunc));
     }
-
-
 
     #[test]
     fn jpeg_completeness_check() {
@@ -572,7 +598,10 @@ mod tests {
         let old = prepare_image(&img, 140).unwrap();
         let sp = shared_pixels_from_image(&img, 140).unwrap();
         assert_eq!(sp.size_hw, old.resized, "缩放尺寸必须一致");
-        assert_eq!(sp.rgb.len(), old.resized.0 as usize * old.resized.1 as usize * 3);
+        assert_eq!(
+            sp.rgb.len(),
+            old.resized.0 as usize * old.resized.1 as usize * 3
+        );
         let new = sp.patchify().unwrap();
         assert_eq!(new.soft_tokens, old.soft_tokens);
         assert_eq!(new.max_patches, old.max_patches);

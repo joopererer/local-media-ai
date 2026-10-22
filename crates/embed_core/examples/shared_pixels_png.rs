@@ -18,8 +18,7 @@ fn arg(args: &[String], name: &str) -> Option<String> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let need = |n: &str| arg(&args, n).unwrap_or_else(|| panic!("缺少参数 {n}"));
-    let soft: u32 = arg(&args, "--soft_tokens")
-        .map_or(140, |s| s.parse().expect("--soft_tokens"));
+    let soft: u32 = arg(&args, "--soft_tokens").map_or(140, |s| s.parse().expect("--soft_tokens"));
     let image_dir = PathBuf::from(need("--image_dir"));
     let files: Vec<String> = need("--files").split(',').map(str::to_string).collect();
     let out_dir = PathBuf::from(need("--out_dir"));

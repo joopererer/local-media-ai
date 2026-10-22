@@ -73,7 +73,6 @@ impl OcrEngine for UnavailableEngine {
     }
 }
 
-
 /// PaddleOCR（PP-OCRv5 mobile，ONNX）作为 [`OcrEngine`] 的实现：输入图片文件。
 /// 调用前须已初始化 ORT 运行库（与嵌入共用 `embed_core::init_ort`）。
 pub struct PaddleEngine {
@@ -104,8 +103,7 @@ impl PaddleEngine {
         let img = image::open(path).map_err(|e| OcrError::Decode(e.to_string()))?;
         let rgb = img.to_rgb8();
         let (w, h) = rgb.dimensions();
-        let (lines, det_ms, cls_ms, rec_ms) =
-            self.inner.recognize_rgb(w, h, rgb.as_raw())?;
+        let (lines, det_ms, cls_ms, rec_ms) = self.inner.recognize_rgb(w, h, rgb.as_raw())?;
         let ocr_lines: Vec<OcrLine> = lines
             .into_iter()
             .map(|l| OcrLine {

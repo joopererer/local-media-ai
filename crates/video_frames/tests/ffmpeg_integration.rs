@@ -24,8 +24,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use video_frames::{
-    extract_frames, plan_sampling, target_times_ms, ExtractMethod, ExtractOptions,
-    FrameStrategy, FpsModePolicy,
+    extract_frames, plan_sampling, target_times_ms, ExtractMethod, ExtractOptions, FpsModePolicy,
+    FrameStrategy,
 };
 
 fn sha256_of(p: &Path) -> String {
@@ -94,10 +94,7 @@ fn test_video(target: &Path) -> bool {
         .output()
         .expect("启动 ffmpeg（合成测试视频）失败：请检查 FO_FFMPEG_BIN");
     if !out.status.success() {
-        println!(
-            "合成测试视频失败：{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        println!("合成测试视频失败：{}", String::from_utf8_lossy(&out.stderr));
     }
     out.status.success()
 }
@@ -245,7 +242,9 @@ fn extracts_frames_from_chinese_and_space_path() {
     // - Filter 路径：t_ms 来自 showinfo 的**实测** pts（扣 start），输入偏移 half_interval
     //   使首帧避开 0 秒；t_ms 相对中点目标的偏差应 ≤ 半间隔（与 seek 一致）。
     let calc_max_dev = |times: &[u64], targets: &[u64]| -> u64 {
-        times.iter().zip(targets.iter())
+        times
+            .iter()
+            .zip(targets.iter())
             .map(|(t, tgt)| t.abs_diff(*tgt))
             .max()
             .unwrap_or(0)
@@ -266,7 +265,10 @@ fn extracts_frames_from_chinese_and_space_path() {
     );
 
     // 耗时输出（不设硬断言，详见 extract_by_seek 的实测记录）。
-    let between_max_dev = seek.times.iter().zip(filter.times.iter())
+    let between_max_dev = seek
+        .times
+        .iter()
+        .zip(filter.times.iter())
         .map(|(a, b)| a.abs_diff(*b))
         .max()
         .unwrap_or(0);
@@ -275,7 +277,10 @@ fn extracts_frames_from_chinese_and_space_path() {
     println!("filter vs mid ± half：max {filter_max_dev}ms（应 ≤ 半间隔）");
     println!("方式间偏差：max {between_max_dev}ms（仅参考）");
     println!("━━━ 性能对比 ━━━");
-    println!("跳转定位 {}ms vs 帧率过滤 {}ms", seek.elapsed_ms, filter.elapsed_ms);
+    println!(
+        "跳转定位 {}ms vs 帧率过滤 {}ms",
+        seek.elapsed_ms, filter.elapsed_ms
+    );
 
     // 跳转定位耗时不退化到 read-the-whole-file 的程度。
     let hard_ceiling = filter.elapsed_ms * 3 + 3_000;
@@ -308,15 +313,22 @@ fn filter_timestamp_matches_pixel_identity() {
     // 6 秒 / 10 fps / 320x240，drawtext 烧录真实 PTS（HH:MM:SS.mmm）。
     let synth = Command::new(ffmpeg_bin())
         .args([
-            "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-            "-f", "lavfi",
-            "-i", "testsrc=duration=6:size=320x240:rate=10",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=6:size=320x240:rate=10",
             "-vf",
             "drawtext=fontfile='C\\:/Windows/Fonts/consola.ttf'\
              :text='%{pts\\:hms}'\
              :fontcolor=white:fontsize=18:x=2:y=2\
              :box=1:boxcolor=black@0.7:boxborderw=6",
-            "-pix_fmt", "yuv420p",
+            "-pix_fmt",
+            "yuv420p",
         ])
         .arg(&video)
         .output()
@@ -335,9 +347,11 @@ fn filter_timestamp_matches_pixel_identity() {
         ..ExtractOptions::default()
     };
     let outcome = extract_frames(
-        &ffmpeg_bin(), &video,
+        &ffmpeg_bin(),
+        &video,
         FrameStrategy::Interval { every_ms: EVERY_MS },
-        &out_dir, &opts,
+        &out_dir,
+        &opts,
     )
     .expect("filter 抽取失败");
 
@@ -351,10 +365,17 @@ fn filter_timestamp_matches_pixel_identity() {
         let video_str = path_arg(&video);
         let r = Command::new(ffmpeg_bin())
             .args([
-                "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-                "-i", &video_str,
-                "-ss", &ts,
-                "-frames:v", "1",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-y",
+                "-i",
+                &video_str,
+                "-ss",
+                &ts,
+                "-frames:v",
+                "1",
             ])
             .arg(&ref_png)
             .output()
@@ -364,10 +385,14 @@ fn filter_timestamp_matches_pixel_identity() {
         let a = sha256_of(&f.image_path);
         let b = sha256_of(&ref_png);
         let ok = a == b;
-        if ok { matched += 1; }
+        if ok {
+            matched += 1;
+        }
         println!(
             "frame[{i}] t_ms={:>5} | filter={} | seek@-t_ms={} | {}",
-            f.t_ms, &a[..12], &b[..12],
+            f.t_ms,
+            &a[..12],
+            &b[..12],
             if ok { "MATCH ✅" } else { "DIFFER ❌" }
         );
     }

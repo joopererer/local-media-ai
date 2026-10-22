@@ -147,8 +147,6 @@ fn main() {
     let _ = std::io::stderr().flush();
 }
 
-
-
 #[cfg(llama_linked)]
 fn embed_text(
     e: &mut Option<llama_impl::LlamaEmbedder>,
@@ -169,8 +167,10 @@ fn embed_text(
     _sw: std::time::Instant,
 ) -> (Result<Vec<f32>, String>, f64) {
     (
-        Err("未链接 llama.cpp（骨架模式：请用 scripts/fetch_llama_runtime.ps1 生成导入库）"
-            .to_string()),
+        Err(
+            "未链接 llama.cpp（骨架模式：请用 scripts/fetch_llama_runtime.ps1 生成导入库）"
+                .to_string(),
+        ),
         0.0,
     )
 }

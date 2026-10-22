@@ -88,7 +88,8 @@ impl LlamaEmbedder {
             cp.n_seq_max = 16;
             cp.kv_unified = true;
             cp.embeddings = true;
-            cp.pooling_type = LLAMA_POOLING_MEAN;            let ctx = llama_init_from_model(model, cp);
+            cp.pooling_type = LLAMA_POOLING_MEAN;
+            let ctx = llama_init_from_model(model, cp);
             if ctx.is_null() {
                 llama_model_free(model);
                 return Err("context 初始化失败".to_string());
@@ -117,7 +118,10 @@ impl LlamaEmbedder {
             let vocab = llama_model_get_vocab(model);
             let n_embd_out = llama_model_n_embd_out(model).max(0) as usize;
             let n_embd_inp = llama_model_n_embd_inp(model).max(0) as usize;
-            let runtime = format!("llama-cpp-b11669-{}", if gpu_layers > 0 { "vulkan" } else { "cpu" });
+            let runtime = format!(
+                "llama-cpp-b11669-{}",
+                if gpu_layers > 0 { "vulkan" } else { "cpu" }
+            );
             Ok(Self {
                 model,
                 ctx,
@@ -195,7 +199,11 @@ impl LlamaEmbedder {
             }
             let mut v = std::slice::from_raw_parts(p, self.n_embd_out).to_vec();
             let s: f64 = v.iter().map(|x| f64::from(*x) * f64::from(*x)).sum();
-            let k = if s > 0.0 { (1.0 / s.sqrt()) as f32 } else { 0.0 };
+            let k = if s > 0.0 {
+                (1.0 / s.sqrt()) as f32
+            } else {
+                0.0
+            };
             for x in v.iter_mut() {
                 *x *= k;
             }
