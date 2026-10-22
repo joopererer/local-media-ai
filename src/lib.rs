@@ -75,7 +75,7 @@ impl Default for RouterConfig {
     fn default() -> Self {
         Self {
             backend: EmbedBackend::OrtCpu,
-            worker_exe: PathBuf::from("fo-llama-worker"),
+            worker_exe: PathBuf::from("llama-embed-worker"),
             model_gguf: PathBuf::new(),
             mmproj_gguf: PathBuf::new(),
             idle_secs: 120,
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn missing_model_paths_are_unavailable() {
-        let r = EmbedRouter::new(llama_cfg("fo-llama-worker"));
+        let r = EmbedRouter::new(llama_cfg("llama-embed-worker"));
         let err = r
             .call_worker(&Request::Text("x".into()), Duration::from_secs(1))
             .unwrap_err();
@@ -623,7 +623,7 @@ mod tests {
     /// 连续失败达 5 次后置位 worker_unavailable（熔断到下次 load）。
     #[test]
     fn crash_bookkeeping_marks_unavailable_after_five() {
-        let r = EmbedRouter::new(llama_cfg("fo-llama-worker"));
+        let r = EmbedRouter::new(llama_cfg("llama-embed-worker"));
         {
             let mut inner = r.inner.lock().unwrap();
             for _ in 0..5 {
