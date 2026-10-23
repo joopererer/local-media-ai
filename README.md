@@ -118,3 +118,13 @@ Contributions keep the existing Apache-2.0 header or add one:
 // Copyright 2026 Jiawei LI
 // Licensed under the Apache License, Version 2.0.
 ```
+
+## Support
+
+If this project saves you time, you can support its development:
+
+- [GitHub Sponsors](https://github.com/sponsors/joopererer)
+- [Buy Me a Coffee](https://www.buymeacoffee.com/joopererer)
+
+Sponsorship is optional. The crates stay Apache-2.0 and the model/runtime
+scripts stay free to use either way.
