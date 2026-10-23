@@ -15,6 +15,12 @@ versions are not comparable with the new ones.
 Upgrading llama.cpp or the EmbeddingGemma 2 export additionally requires the
 consistency check to pass — see [`docs/EVALUATION.md`](docs/EVALUATION.md).
 
+> **Immutability note.** The `v0.1.1` and `v0.1.2` tags existed only briefly
+> before the first public push and were deleted when `v0.1.0` was moved to the
+> CI-green revision. This was a one-time event during the initial publication,
+> before any downstream consumer pinned to those tags. As of `v0.1.0`, released
+> tags are immutable — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

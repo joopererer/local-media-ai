@@ -91,6 +91,16 @@ llama.cpp or the model must pass the consistency check described in
 [`docs/EVALUATION.md`](docs/EVALUATION.md) (same backend: element-wise equal
 within `1e-6`; cross backend: cosine ≥ 0.99).
 
+### Released tags are immutable
+
+A pushed `v*` tag is never moved and never deleted. Downstream projects pin to a
+tag and `Cargo.lock` records the exact commit, so moving a tag changes what
+everyone builds without changing the version number. Fixes always ship as the
+next revision (`v0.1.1`, `v0.1.2`, …). Do not depend on a branch.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full rule and the release
+checklist.
+
 ## Repository layout
 
 ```
