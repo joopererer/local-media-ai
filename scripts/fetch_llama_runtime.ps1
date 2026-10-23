@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Downloads the llama.cpp runtime (and generates the import libraries) for the
   llama.cpp embedding backend.
@@ -80,12 +80,29 @@ if (-not $SkipImportLib) {
     $name = [System.IO.Path]::GetFileNameWithoutExtension($dll)
     $def = Join-Path $defDir "$name.def"
     'EXPORTS' | Set-Content $def
+    # dumpbin /exports 的行格式：`<ordinal> <hint> <RVA> <name>`。
+    # 不能按空白取固定列：带转发（forwarder）的行会多一列，旧脚本取第 4 段，
+    # 结果把 RVA（如 00106130）当成导出名写进 .def，导入库因此全是无效符号
+    # （链接期报一堆 LNK2019 unresolved external）。这里按“三列十六进制后跟名字”匹配。
     & dumpbin /exports $path.FullName |
-      Select-Object -Skip 19 |
-      ForEach-Object { ($_ -split '\s+')[3] } |
-      Where-Object { $_ -and $_ -ne '' -and $_ -notmatch '^\[' } |
+      ForEach-Object {
+        if ($_ -match '^\s*\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+([^\s=]+)\s*$') {
+          $matches[1]
+        }
+      } |
       Sort-Object -Unique | Add-Content $def
-    & lib /def:$def /out:(Join-Path $cache "$name.lib") /machine:x64 | Out-Null
+    $exportCount = (Get-Content $def | Measure-Object).Count - 1
+    if ($exportCount -lt 1) {
+      throw "no exports parsed from $($path.FullName)"
+    }
+    Write-Output "exports: $name ($exportCount symbols)"
+    # 注意：不能写成 `/out:(Join-Path ...)` —— PowerShell 会把 `:` 当作变量作用域分隔符，
+    # 拆成 `/out:` + 表达式两个参数，lib.exe 随即报 LNK1146 且不产出 .lib。
+    $libOut = Join-Path $cache "$name.lib"
+    & lib /def:$def /out:$libOut /machine:x64 | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $libOut)) {
+      throw "failed to create import library $libOut (lib.exe exit $LASTEXITCODE)"
+    }
     Write-Output "import library: $name.lib"
   }
 }

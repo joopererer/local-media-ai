@@ -1,0 +1,13 @@
+# Normalise line endings in the repository; check out LF everywhere.
+* text=auto eol=lf
+
+# Windows scripts keep a UTF-8 BOM so Windows PowerShell 5.1 decodes the
+# non-ASCII text correctly; the BOM is part of the file content, not the EOL.
+*.ps1 text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Generated / binary assets
+*.png binary
+*.jpg binary
+*.jsonl text eol=lf

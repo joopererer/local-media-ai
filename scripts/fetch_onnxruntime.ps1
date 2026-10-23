@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Downloads the ONNX Runtime shared library and verifies its sha256.
 

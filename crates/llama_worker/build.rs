@@ -2,7 +2,7 @@
 //!
 //! 查找顺序（首个存在者）：
 //!   1) 环境变量 `FO_LLAMA_LIB_DIR`（打包脚本 / CI 设置的构建目录）
-//!   2) `<repo>/app/build/llama`（本仓库内的默认输出目录）
+//!   2) `<repo>/runtime/llama`（scripts/fetch_llama_runtime.ps1 的默认输出目录）
 //!
 //! 找到时发出 `cfg(llama_linked)` 并链接 llama/mtmd/ggml；找不到时只告警，
 //! 使 worker 可编译为"协议骨架"（帧协议可用、嵌入未链接），便于无运行库环境测试。
@@ -13,7 +13,7 @@ fn main() {
     if let Ok(d) = std::env::var("FO_LLAMA_LIB_DIR") {
         dirs.push(d.into());
     }
-    dirs.push(std::path::PathBuf::from("../../app/build/llama"));
+    dirs.push(std::path::PathBuf::from("../../runtime/llama"));
 
     let mut found = None;
     for d in &dirs {

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Downloads the EmbeddingGemma 2 model files and verifies their sha256.
 
