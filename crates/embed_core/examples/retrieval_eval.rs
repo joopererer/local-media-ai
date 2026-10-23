@@ -152,8 +152,10 @@ fn decode_vec(raw: &[u8]) -> Result<Vec<f32>, String> {
         return Err("向量字节数不是 4 的倍数".to_string());
     }
     Ok(raw
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect())
 }
 

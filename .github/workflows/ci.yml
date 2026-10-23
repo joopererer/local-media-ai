@@ -52,8 +52,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustdoc
 
       - name: cargo doc
         run: cargo doc --workspace --no-deps

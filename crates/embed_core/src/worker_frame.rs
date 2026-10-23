@@ -129,7 +129,8 @@ impl Request {
     }
 }
 
-const MAX_FRAME: u32 = 64 * 1024 * 1024;
+/// 单帧 payload 上限（64 MiB）。协议两端都按这个上限校验。
+pub const MAX_FRAME: u32 = 64 * 1024 * 1024;
 
 /// 写一帧请求。`limit` 为 payload 上限（默认 [`MAX_FRAME`]）。
 pub fn write_request(

@@ -46,7 +46,7 @@ fn build_session(path: &Path, threads: usize) -> Result<Session, OcrError> {
         .map_err(inf)
 }
 
-/// 一个检测框（原图坐标，轴对齐 [x0,y0,x1,y1]）。
+/// 一个检测框（原图坐标，轴对齐 \[x0,y0,x1,y1\]）。
 #[derive(Debug, Clone, Copy)]
 pub struct DetBox {
     pub x0: f32,
@@ -164,7 +164,7 @@ impl PaddleOcr {
 
     // ── det ────────────────────────────────────────────────────────────────
 
-    /// 一个检测框（原图坐标，轴对齐 [x0,y0,x1,y1]）。调试用原始分量输出。
+    /// 一个检测框（原图坐标，轴对齐 \[x0,y0,x1,y1\]）。调试用原始分量输出。
     pub fn detect_debug(&self, img: &RgbImageData) -> Result<Vec<(DetBox, f32)>, OcrError> {
         self.detect_components(img)
     }

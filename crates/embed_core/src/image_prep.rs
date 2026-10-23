@@ -227,7 +227,7 @@ fn resize_bicubic_aa(src: &[u8], w: usize, h: usize, tw: usize, th: usize) -> Ve
     out
 }
 
-/// 完整预处理：缩放 → 缩放到 [0,1] → 切补丁 → 位置 id → 补齐 → input_ids。
+/// 完整预处理：缩放 → 缩放到 \[0,1\] → 切补丁 → 位置 id → 补齐 → input_ids。
 ///
 /// 27.2b：本体已拆为 [`shared_pixels_from_image`]（缩放，后端边界）+
 /// [`patchify_pixels`]（切块/位置/token，纯函数）。保留本函数为两者的组合，
