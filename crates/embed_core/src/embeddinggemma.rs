@@ -99,6 +99,17 @@ pub struct Embedder {
     threads: usize,
 }
 
+/// 针对视频关键帧（带时间戳）的嵌入结果。
+#[derive(Debug, Clone)]
+pub struct VideoFrameEmbedding {
+    /// 帧在视频中的时间戳（毫秒）。
+    pub t_ms: u64,
+    /// 768 维 L2 归一化特征向量。
+    pub vector: Vec<f32>,
+    /// 总耗时（预处理 + 视觉编码 + 文本主干，秒）。
+    pub elapsed_secs: f64,
+}
+
 /// 图片嵌入结果与分段耗时（秒）。
 #[derive(Debug, Clone)]
 pub struct ImageEmbedding {
@@ -200,6 +211,40 @@ impl Embedder {
     }
 
     /// 读取图片文件并嵌入（EXIF 方向、RGB 转换规则见 [`crate::image_prep::load_rgb_image`]）。
+    /// 批量嵌入图片文件列表（如视频关键帧列表）。
+    pub fn embed_image_files(
+        &self,
+        paths: &[&Path],
+        max_soft_tokens: u32,
+        skip_sniff: bool,
+    ) -> Result<Vec<ImageEmbedding>, EmbedError> {
+        let mut results = Vec::with_capacity(paths.len());
+        for path in paths {
+            results.push(self.embed_image_file(path, max_soft_tokens, skip_sniff)?);
+        }
+        Ok(results)
+    }
+
+    /// 批量嵌入带时间戳的视频帧列表。
+    pub fn embed_video_frames(
+        &self,
+        frames: &[(&Path, u64)],
+        max_soft_tokens: u32,
+        skip_sniff: bool,
+    ) -> Result<Vec<VideoFrameEmbedding>, EmbedError> {
+        let mut results = Vec::with_capacity(frames.len());
+        for &(path, t_ms) in frames {
+            let res = self.embed_image_file(path, max_soft_tokens, skip_sniff)?;
+            let elapsed_secs = res.prep_secs + res.vision_secs + res.backbone_secs;
+            results.push(VideoFrameEmbedding {
+                t_ms,
+                vector: res.vector,
+                elapsed_secs,
+            });
+        }
+        Ok(results)
+    }
+
     pub fn embed_image_file(
         &self,
         path: &Path,

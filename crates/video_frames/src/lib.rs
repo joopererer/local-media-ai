@@ -329,32 +329,29 @@ pub fn extract_frames_with(
         total_duration_ms
     };
 
-    let every_ms = match strategy {
-        FrameStrategy::Interval { every_ms } => every_ms,
-        FrameStrategy::Scene { .. } => {
-            return Err(VideoError::Unavailable(
-                "镜头检测抽帧尚未实现（先用 Interval 策略）".into(),
-            ))
-        }
+    let (every_ms, is_scene) = match strategy {
+        FrameStrategy::Interval { every_ms } => (every_ms, false),
+        FrameStrategy::Scene { .. } => (1000, true),
     };
 
     let plan = plan_sampling(duration_ms, every_ms, options.max_frames);
-    let method = resolve_method(options.method, duration_ms, options.seek_threshold_ms);
+    let method = if is_scene {
+        ExtractMethod::Filter
+    } else {
+        resolve_method(options.method, duration_ms, options.seek_threshold_ms)
+    };
     let targets = if let Some(range) = options.clip_range {
         target_times_for_range(&range, &plan)
     } else {
         target_times_ms(duration_ms, &plan)
     };
 
-    let seek_applicable = method == ExtractMethod::Seek && !targets.is_empty();
+    let seek_applicable = !is_scene && method == ExtractMethod::Seek && !targets.is_empty();
     let (mut frames, used, truncated, max_seek_drift) = if seek_applicable {
         let (f, u, d) = extract_by_seek(ffmpeg_bin, video, out_dir, options, &targets, runner)?;
         (f, u, 0, d)
     } else {
-        // Filter 方式：t_ms 全部来自 ffmpeg `showinfo` 的**实测** pts_time（扣除起始时间），
-        // 不再用代码算的目标时刻代替。在 `-i` 之前加 `-ss half_interval` 偏移，
-        // 让首帧避开 0 秒位置，与跳转定位的中点采样一致。
-        let (f, u, t) = extract_by_filter(ffmpeg_bin, video, out_dir, &plan, options, runner)?;
+        let (f, u, t) = extract_by_filter(ffmpeg_bin, video, out_dir, strategy, &plan, options, runner)?;
         (f, u, t, 0)
     };
 
@@ -406,6 +403,7 @@ fn extract_by_filter(
     ffmpeg_bin: &Path,
     video: &Path,
     out_dir: &Path,
+    strategy: FrameStrategy,
     plan: &SamplingPlan,
     options: &ExtractOptions,
     runner: &dyn ProcessRunner,
@@ -415,7 +413,7 @@ fn extract_by_filter(
     // 起始时间戳（视频流可能不是从 0 开始），扣除后 t_ms 才与播放器时间一致。
     let start_time_ms = probe_start_time_ms(ffmpeg_bin, video, runner);
 
-    let args = build_args(video, out_dir, plan, options, used);
+    let args = build_args(video, out_dir, strategy, plan, options, used);
     let mut out = runner.run(ffmpeg_bin, &args)?;
     if !out.success && used.allows_fallback() && plan.single_at_ms.is_none() {
         // 版本不可识别：先试了 `-fps_mode`，失败则用旧写法 `-vsync` 重试一次。
@@ -423,7 +421,7 @@ fn extract_by_filter(
         clean_stale_frames(out_dir)?;
         let first_err = out.stderr.clone();
         used = FpsModePolicy::Vsync;
-        let retry_args = build_args(video, out_dir, plan, options, used);
+        let retry_args = build_args(video, out_dir, strategy, plan, options, used);
         out = runner.run(ffmpeg_bin, &retry_args)?;
         if !out.success {
             return Err(VideoError::FfmpegFailed(format!(
@@ -858,6 +856,7 @@ fn probe_duration_ms(
 fn build_args(
     video: &Path,
     out_dir: &Path,
+    strategy: FrameStrategy,
     plan: &SamplingPlan,
     options: &ExtractOptions,
     fps_mode: FpsModePolicy,
@@ -869,10 +868,15 @@ fn build_args(
 
     // 输入偏移：如果有 clip_range，以 clip_range.start_ms 为基准偏移，并用 -to 限制结束范围
     if let Some(range) = options.clip_range {
-        let offset_ms = if plan.single_at_ms.is_none() {
-            range.start_ms.saturating_add(plan.every_ms / 2)
-        } else {
-            range.start_ms.saturating_add(plan.single_at_ms.unwrap_or(0))
+        let offset_ms = match strategy {
+            FrameStrategy::Scene { .. } => range.start_ms,
+            FrameStrategy::Interval { .. } => {
+                if plan.single_at_ms.is_none() {
+                    range.start_ms.saturating_add(plan.every_ms / 2)
+                } else {
+                    range.start_ms.saturating_add(plan.single_at_ms.unwrap_or(0))
+                }
+            }
         };
         args.push("-ss".into());
         args.push(format!("{:.3}", offset_ms as f64 / 1000.0));
@@ -880,13 +884,18 @@ fn build_args(
         args.push(format!("{:.3}", range.end_ms as f64 / 1000.0));
     } else {
         // 正常全片抽帧偏移
-        if plan.single_at_ms.is_none() {
-            let offset_ms = plan.every_ms / 2;
-            args.push("-ss".into());
-            args.push(format!("{:.3}", offset_ms as f64 / 1000.0));
-        } else if let Some(at_ms) = plan.single_at_ms {
-            args.push("-ss".into());
-            args.push(format!("{:.3}", at_ms as f64 / 1000.0));
+        match strategy {
+            FrameStrategy::Scene { .. } => {}
+            FrameStrategy::Interval { .. } => {
+                if plan.single_at_ms.is_none() {
+                    let offset_ms = plan.every_ms / 2;
+                    args.push("-ss".into());
+                    args.push(format!("{:.3}", offset_ms as f64 / 1000.0));
+                } else if let Some(at_ms) = plan.single_at_ms {
+                    args.push("-ss".into());
+                    args.push(format!("{:.3}", at_ms as f64 / 1000.0));
+                }
+            }
         }
     }
     args.push("-i".into());
@@ -901,18 +910,22 @@ fn build_args(
         "scale=iw:ih".to_string()
     };
 
-    let chain = if plan.single_at_ms.is_some() {
-        // 短视频：单帧抽取，顺带上报实测时刻。
-        format!("{scale},showinfo")
-    } else {
-        // select='isnan(prev_selected_t)+gte(t-prev_selected_t,EVERY)'：
-        // 第一帧无条件选中，之后每隔 `every` 秒选中下一帧。
-        // 用 `t`（帧 PTS，单位秒）而非 `n`（帧序号），保证选中的是**整帧边界**上
-        // 距上次采样点最近的帧，且 showinfo 报告的 pts 与画面严格一致（实测 0 误差）。
-        format!(
-            "select='isnan(prev_selected_t)+gte(t-prev_selected_t\\,{sec:.6})',{scale},showinfo",
-            sec = plan.every_ms as f64 / 1000.0
-        )
+    let chain = match strategy {
+        FrameStrategy::Scene { threshold } => {
+            format!(
+                r"select='isnan(prev_selected_t)+gt(scene\,{threshold:.3})',{scale},showinfo"
+            )
+        }
+        FrameStrategy::Interval { .. } => {
+            if plan.single_at_ms.is_some() {
+                format!("{scale},showinfo")
+            } else {
+                format!(
+                    r"select='isnan(prev_selected_t)+gte(t-prev_selected_t\,{sec:.6})',{scale},showinfo",
+                    sec = plan.every_ms as f64 / 1000.0
+                )
+            }
+        }
     };
     args.push("-vf".into());
     args.push(chain);
@@ -1184,17 +1197,24 @@ mod tests {
     }
 
     #[test]
-    fn scene_strategy_is_explicitly_unavailable() {
+    fn scene_strategy_generates_scene_select_filter() {
         let (ff, video, out) = fixture("scene");
+        let runner = FakeRunner::new(0, "");
         let r = extract_frames_with(
             &ff,
             &video,
-            FrameStrategy::Scene { threshold: 0.3 },
+            FrameStrategy::Scene { threshold: 0.4 },
             &out,
             &ExtractOptions::default(),
-            &FakeRunner::new(0, ""),
+            &runner,
         );
-        assert!(matches!(r, Err(VideoError::Unavailable(_))));
+        assert!(r.is_ok(), "Scene strategy should succeed");
+        let calls = runner.calls.borrow();
+        let joined = calls.last().unwrap().join(" ");
+        assert!(
+            joined.contains(r"select='isnan(prev_selected_t)+gt(scene\,0.400)'"),
+            "should contain scene threshold filter: {joined}"
+        );
     }
 
     #[test]
@@ -1867,6 +1887,7 @@ mod tests {
         let args = build_args(
             Path::new("video.mp4"),
             Path::new("out"),
+            FrameStrategy::Interval { every_ms: 2_000 },
             &plan,
             &opts,
             FpsModePolicy::FpsMode,
