@@ -6,6 +6,7 @@ members = [
     "crates/llama_worker",
     "crates/ocr_core",
     "crates/video_frames",
+    "crates/caption_core",
 ]
 
 [workspace.package]
