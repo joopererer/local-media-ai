@@ -17,11 +17,11 @@
 - [x] **2.1 多图输入与结构化 Prompt**：新增独立 crate `crates/caption_core`，内置针对 Qwen2-VL 的 `PromptBuilder`（约束输出单层 JSON：scene, main_subject, key_actions, summary）。
 - [x] **2.2 鲁棒解析与 FTS5 文档转换**：实现 `ClipCaption::parse_robust`（容错 markdown 围栏与前导脏字符）与 `to_search_document()`（自动格式化为全文检索复合文档）；提供 `caption_probe` 探针验证。
 
-### Phase 3: 桥接层与 IPC 集成 (进行中 🚀)
-- [ ] **3.1 跨语言绑定**：确定并实现 `video_clip_manager` 与 `local-media-ai` 的桥接通道（Sidecar 独立子进程协议或 `flutter_rust_bridge`）。
-- [ ] **3.2 运行时门控与依赖管理**：FFmpeg 环境自检、模型权重后台下载与 sha256 校验。
+### Phase 3: 桥接层与 IPC 集成 [已完成 ✅]
+- [x] **3.1 统一跨语言 Sidecar CLI**：在 `local-media-ai` 中实现 `crates/local_media_cli`（产出 `local-media-ai.exe`），暴露 `doctor`、`extract-clip`、`embed-text`、`embed-frames`、`caption` 标准 JSON 协议。
+- [x] **3.2 Flutter 端服务封装与自检**：在 `video_clip_manager` 中封装 [`lib/services/ai_service.dart`](file:///d:/workspace/IdeaProjects/video_clip_manager/lib/services/ai_service.dart)，完成自动路径解析、FFmpeg 环境自检、抽帧与认知调用；单元测试全绿通过。
 
-### Phase 4: `video_clip_manager` 帧池存储与增量区间引擎
+### Phase 4: `video_clip_manager` 帧池存储与增量区间引擎 (进行中 🚀)
 - [ ] **4.1 绝对时间戳帧池**：建立 `video_frame_embeddings(video_path_hash, t_ms, vector)`，实现母视频帧特征的全局复用。
 - [ ] **4.2 增量更新算法 (Delta Engine)**：Clip 拖拽微调时，缩短 0 耗时，扩大仅增量补算 $S_{missing} = S_{new} \setminus S_{cached}$。
 
