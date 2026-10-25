@@ -17,6 +17,30 @@ pub struct ClipCaption {
     pub raw_response: String,
 }
 
+/// 对标签列表进行原子化清洗：拆分逗号、顿号、分号，剥离停用前缀，过滤长度与标点
+pub fn sanitize_tags(raw_tags: &[String]) -> Vec<String> {
+    let mut clean_tags = Vec::new();
+    let delimiters = [',', '，', '、', ';', '；', '|', '/', '\\', '\n', '\r'];
+    for item in raw_tags {
+        for token in item.split(&delimiters[..]) {
+            let mut s = token.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+            if s.is_empty() {
+                continue;
+            }
+            for prefix in &["一个", "一根", "一只", "一部", "手持", "手拿", "身穿", "在", "正在"] {
+                if s.starts_with(prefix) && s.chars().count() > prefix.chars().count() + 1 {
+                    s = s[prefix.len()..].trim().to_string();
+                    break;
+                }
+            }
+            if s.chars().count() >= 2 && s.chars().count() <= 25 && !clean_tags.contains(&s) {
+                clean_tags.push(s);
+            }
+        }
+    }
+    clean_tags
+}
+
 impl ClipCaption {
     /// 构造用于 SQLite FTS5 全文索引检索的统一复合文本。
     pub fn to_search_document(&self) -> String {
@@ -37,6 +61,7 @@ impl ClipCaption {
         // 尝试提取 JSON 区间
         if let Some(json_slice) = extract_json_slice(trimmed) {
             if let Ok(mut parsed) = serde_json::from_str::<ClipCaption>(json_slice) {
+                parsed.key_actions = sanitize_tags(&parsed.key_actions);
                 parsed.raw_response = raw.to_string();
                 return parsed;
             }
@@ -52,7 +77,8 @@ impl ClipCaption {
                     .and_then(|s| s.as_str())
                     .unwrap_or("unknown")
                     .to_string();
-                let key_actions = v.get("key_actions")
+                let raw_actions: Vec<String> = v.get("tags")
+                    .or_else(|| v.get("key_actions"))
                     .or_else(|| v.get("actions"))
                     .and_then(|a| a.as_array())
                     .map(|arr| {
@@ -61,6 +87,7 @@ impl ClipCaption {
                             .collect()
                     })
                     .unwrap_or_default();
+                let key_actions = sanitize_tags(&raw_actions);
                 let summary = v.get("summary")
                     .or_else(|| v.get("description"))
                     .and_then(|s| s.as_str())
@@ -101,6 +128,13 @@ fn extract_json_slice(text: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sanitize_tags_splits_clauses_and_punctuations() {
+        let raw = r#"{"scene": "snow mountain", "main_subject": "woman", "key_actions": ["行走，手持木棍"], "summary": "A woman walks in snow mountain."}"#;
+        let c = ClipCaption::parse_robust(raw);
+        assert_eq!(c.key_actions, vec!["行走", "木棍"]);
+    }
+
     use super::*;
 
     #[test]
