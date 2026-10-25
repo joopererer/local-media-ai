@@ -397,13 +397,14 @@ fn main() {
             let paths: Vec<&str> = frames.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
             let prompt = caption_core::PromptBuilder::build_user_prompt(paths.len(), instruction.as_deref());
 
-            let raw = if let Some(m) = mock_response {
-                m
-            } else {
-                format!(
-                    r#"{{"scene": "video clip", "main_subject": "subject", "key_actions": ["action"], "summary": "{}"}}"#,
-                    prompt
-                )
+            let raw = match mock_response {
+                Some(m) => m,
+                None => {
+                    OutputEnvelope::<CaptionResult>::failure(
+                        "No VLM inference backend configured for CLI. Please configure Ollama (http://localhost:11434/v1) or an OpenAI/DashScope compatible endpoint in settings."
+                    ).print();
+                    std::process::exit(1);
+                }
             };
 
             let parsed = caption_core::ClipCaption::parse_robust(&raw);
