@@ -1,0 +1,18 @@
+[package]
+name = "local_media_cli"
+version.workspace = true
+edition.workspace = true
+description = "Unified CLI sidecar for local-media-ai services (video frames, embedding, and VLM captioning)."
+
+[[bin]]
+name = "local-media-ai"
+path = "src/main.rs"
+
+[dependencies]
+video_frames = { path = "../video_frames" }
+embed_core = { path = "../embed_core" }
+caption_core = { path = "../caption_core" }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
