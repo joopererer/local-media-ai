@@ -1,0 +1,18 @@
+{
+  "repo": "bartowski/Qwen2-VL-2B-Instruct-GGUF",
+  "commit": "2160e265f926e84e84dbb1c73e623b5324b23707",
+  "model_id": "qwen2-vl-2b-instruct-gguf",
+  "note": "Qwen2-VL 2B GGUF weights and vision multimodal projector for llama.cpp runtime",
+  "files": [
+    {
+      "path": "Qwen2-VL-2B-Instruct-Q4_K_M.gguf",
+      "size": 986047232,
+      "sha256": "4ef095263343fc1237e8ca879790bb262bcf209f082e0a9bfce219b7ece55e8b"
+    },
+    {
+      "path": "mmproj-Qwen2-VL-2B-Instruct-f16.gguf",
+      "size": 1331656192,
+      "sha256": "05cc3ae461a7b6aa4023312ccab549ecab77cf8677efee04f049fcbab55b8bc3"
+    }
+  ]
+}
