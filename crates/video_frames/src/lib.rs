@@ -90,6 +90,36 @@ pub fn fps_mode_policy_for_version(major: i32, minor: i32) -> FpsModePolicy {
     }
 }
 
+/// 片段抽取区间（毫秒）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ClipRange {
+    /// 片段起始时间戳（毫秒）。
+    pub start_ms: u64,
+    /// 片段结束时间戳（毫秒）。
+    pub end_ms: u64,
+}
+
+impl ClipRange {
+    /// 构造时间区间，自动确保 start <= end。
+    pub fn new(start_ms: u64, end_ms: u64) -> Self {
+        let (start, end) = if start_ms <= end_ms {
+            (start_ms, end_ms)
+        } else {
+            (end_ms, start_ms)
+        };
+        Self {
+            start_ms: start,
+            end_ms: end,
+        }
+    }
+
+    /// 区间总时长（毫秒）。
+    pub fn duration_ms(&self) -> u64 {
+        self.end_ms.saturating_sub(self.start_ms)
+    }
+}
+
 /// 抽帧参数（与策略正交）。
 #[derive(Debug, Clone, Copy)]
 pub struct ExtractOptions {
@@ -107,6 +137,8 @@ pub struct ExtractOptions {
     pub method: ExtractMethod,
     /// 自动选择"跳转定位"的时长阈值（毫秒，默认 60 秒）。
     pub seek_threshold_ms: u64,
+    /// 可选：抽帧区间（只抽取该时间范围内的帧）。若为 None 则抽取整个视频。
+    pub clip_range: Option<ClipRange>,
 }
 
 impl Default for ExtractOptions {
@@ -119,6 +151,7 @@ impl Default for ExtractOptions {
             fps_mode: FpsModePolicy::Auto,
             method: ExtractMethod::Auto,
             seek_threshold_ms: DEFAULT_SEEK_THRESHOLD_MS,
+            clip_range: None,
         }
     }
 }
@@ -214,6 +247,20 @@ impl ProcessRunner for SystemRunner {
 ///
 /// `ffmpeg_bin` 为 ffmpeg 可执行文件路径；`out_dir` 用于存放帧图（每次调用前会清掉
 /// 目录内残留的 `frame_*.png`，避免上次中断的帧混进结果）。
+/// 抽取指定视频片段区间的帧（用于 Clip 管理与检索）。
+pub fn extract_clip_frames(
+    ffmpeg_bin: &Path,
+    video: &Path,
+    range: ClipRange,
+    strategy: FrameStrategy,
+    out_dir: &Path,
+    options: &ExtractOptions,
+) -> Result<ExtractOutcome, VideoError> {
+    let mut opts = *options;
+    opts.clip_range = Some(range);
+    extract_frames_with(ffmpeg_bin, video, strategy, out_dir, &opts, &SystemRunner)
+}
+
 pub fn extract_frames(
     ffmpeg_bin: &Path,
     video: &Path,
@@ -252,7 +299,11 @@ pub fn extract_frames_with(
     options: &ExtractOptions,
     runner: &dyn ProcessRunner,
 ) -> Result<ExtractOutcome, VideoError> {
-    if !video.is_file() {
+    let is_network_url = {
+        let s = video.to_string_lossy();
+        s.starts_with("http://") || s.starts_with("https://")
+    };
+    if !is_network_url && !video.is_file() {
         return Err(VideoError::NotFound(video.display().to_string()));
     }
     if !ffmpeg_bin.is_file() {
@@ -267,9 +318,15 @@ pub fn extract_frames_with(
         .map_err(|e| VideoError::FfmpegFailed(format!("创建输出目录失败: {e}")))?;
     clean_stale_frames(out_dir)?;
 
-    let duration_ms = match options.duration_hint_ms {
+    let total_duration_ms = match options.duration_hint_ms {
         Some(ms) if ms > 0 => Some(ms),
         _ => probe_duration_ms(ffmpeg_bin, video, runner).ok().flatten(),
+    };
+
+    let duration_ms = if let Some(range) = options.clip_range {
+        Some(range.duration_ms())
+    } else {
+        total_duration_ms
     };
 
     let every_ms = match strategy {
@@ -283,7 +340,11 @@ pub fn extract_frames_with(
 
     let plan = plan_sampling(duration_ms, every_ms, options.max_frames);
     let method = resolve_method(options.method, duration_ms, options.seek_threshold_ms);
-    let targets = target_times_ms(duration_ms, &plan);
+    let targets = if let Some(range) = options.clip_range {
+        target_times_for_range(&range, &plan)
+    } else {
+        target_times_ms(duration_ms, &plan)
+    };
 
     let seek_applicable = method == ExtractMethod::Seek && !targets.is_empty();
     let (mut frames, used, truncated, max_seek_drift) = if seek_applicable {
@@ -594,6 +655,38 @@ pub fn resolve_method(
 /// - 同时限制目标数 ≤ `ceil(duration/every_ms)`（ffmpeg fps filter 实际能产出的帧数），
 ///   避免目标数远多于 ffmpeg 能产出的帧（短视频 + max_frames=24 时）；
 /// - 时长未知 ⇒ 空（调用方回退帧率过滤）。
+/// 计算指定片段区间内的目标时刻列表。
+pub fn target_times_for_range(range: &ClipRange, plan: &SamplingPlan) -> Vec<u64> {
+    let d = range.duration_ms();
+    if d == 0 {
+        return vec![range.start_ms];
+    }
+    if let Some(single) = plan.single_at_ms {
+        return vec![range.start_ms.saturating_add(single)];
+    }
+    let n = plan.max_frames as u64;
+    let offsets: Vec<u64> = (0..plan.max_frames)
+        .map(|i| {
+            let fraction = (i as f64 + 0.5) / n as f64;
+            (fraction * d as f64).round() as u64
+        })
+        .take_while(|t| *t < d)
+        .collect();
+
+    let max_targets = ((d as f64) / (plan.every_ms as f64)).ceil() as usize;
+    let offsets = if offsets.len() > max_targets {
+        offsets.into_iter().take(max_targets).collect()
+    } else {
+        offsets
+    };
+
+    if offsets.is_empty() {
+        vec![range.start_ms.saturating_add(d / 2)]
+    } else {
+        offsets.into_iter().map(|off| range.start_ms.saturating_add(off)).collect()
+    }
+}
+
 pub fn target_times_ms(duration_ms: Option<u64>, plan: &SamplingPlan) -> Vec<u64> {
     // 短视频单帧路径：与 plan_sampling 的 single_at_ms 对齐
     if let Some(single) = plan.single_at_ms {
@@ -774,16 +867,27 @@ fn build_args(
     args.push("-threads".into());
     args.push(options.threads.max(1).to_string());
 
-    // 输入偏移（非单帧路径）：提前半个间隔，让首帧避开 0 秒，与跳转定位的中点采样一致。
-    // 单帧路径仍跳到中点不变。
-    if plan.single_at_ms.is_none() {
-        let offset_ms = plan.every_ms / 2;
+    // 输入偏移：如果有 clip_range，以 clip_range.start_ms 为基准偏移，并用 -to 限制结束范围
+    if let Some(range) = options.clip_range {
+        let offset_ms = if plan.single_at_ms.is_none() {
+            range.start_ms.saturating_add(plan.every_ms / 2)
+        } else {
+            range.start_ms.saturating_add(plan.single_at_ms.unwrap_or(0))
+        };
         args.push("-ss".into());
         args.push(format!("{:.3}", offset_ms as f64 / 1000.0));
-    } else if let Some(at_ms) = plan.single_at_ms {
-        // 短视频单帧：直接跳到中点（单帧路径无间隔问题）。
-        args.push("-ss".into());
-        args.push(format!("{:.3}", at_ms as f64 / 1000.0));
+        args.push("-to".into());
+        args.push(format!("{:.3}", range.end_ms as f64 / 1000.0));
+    } else {
+        // 正常全片抽帧偏移
+        if plan.single_at_ms.is_none() {
+            let offset_ms = plan.every_ms / 2;
+            args.push("-ss".into());
+            args.push(format!("{:.3}", offset_ms as f64 / 1000.0));
+        } else if let Some(at_ms) = plan.single_at_ms {
+            args.push("-ss".into());
+            args.push(format!("{:.3}", at_ms as f64 / 1000.0));
+        }
     }
     args.push("-i".into());
     args.push(path_arg(video));
@@ -1707,6 +1811,71 @@ mod tests {
             "select 中应使用均匀重采样后的间隔: {}",
             runner.last_args().join(" ")
         );
+    }
+
+
+    #[test]
+    fn clip_range_targets_fall_strictly_within_range() {
+        let range = ClipRange::new(10_000, 30_000);
+        assert_eq!(range.duration_ms(), 20_000);
+
+        let plan = plan_sampling(Some(range.duration_ms()), 2_000, 10);
+        let targets = target_times_for_range(&range, &plan);
+
+        assert!(!targets.is_empty());
+        for &t in &targets {
+            assert!(t >= 10_000, "target {t} must be >= start 10000");
+            assert!(t <= 30_000, "target {t} must be <= end 30000");
+        }
+    }
+
+    #[test]
+    fn clip_range_seek_creates_targets_with_offset() {
+        let (ff, video, out) = fixture("clip_seek");
+        let runner = FakeRunner::new(0, "");
+        let range = ClipRange::new(20_000, 40_000);
+        let opts = ExtractOptions {
+            method: ExtractMethod::Seek,
+            clip_range: Some(range),
+            ..ExtractOptions::default()
+        };
+        let outcome = extract_frames_with(
+            &ff,
+            &video,
+            FrameStrategy::Interval { every_ms: 5_000 },
+            &out,
+            &opts,
+            &runner,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.method, ExtractMethod::Seek);
+        for frame in &outcome.frames {
+            assert!(frame.t_ms >= 20_000, "frame t_ms must be >= start");
+            assert!(frame.t_ms <= 40_000, "frame t_ms must be <= end");
+        }
+    }
+
+    #[test]
+    fn clip_range_filter_args_contain_ss_and_to() {
+        let range = ClipRange::new(5_000, 15_000);
+        let opts = ExtractOptions {
+            clip_range: Some(range),
+            ..ExtractOptions::default()
+        };
+        let plan = plan_sampling(Some(10_000), 2_000, 5);
+        let args = build_args(
+            Path::new("video.mp4"),
+            Path::new("out"),
+            &plan,
+            &opts,
+            FpsModePolicy::FpsMode,
+        );
+
+        let ss_idx = args.iter().position(|a| a == "-ss").expect("must have -ss");
+        let to_idx = args.iter().position(|a| a == "-to").expect("must have -to");
+        assert!(ss_idx < to_idx, "-ss must precede -to");
+        assert_eq!(args[to_idx + 1], "15.000");
     }
 
     #[test]
