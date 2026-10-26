@@ -128,7 +128,7 @@ checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
 name = "caption_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "serde",
@@ -387,7 +387,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "embed_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "hex",
  "image",
@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "embed_router"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "embed_core",
  "serde_json",
@@ -602,7 +602,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "llama_worker"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "embed_core",
  "serde",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "local_media_cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "caption_core",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "ocr_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "ort",
@@ -1335,7 +1335,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "video_frames"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
