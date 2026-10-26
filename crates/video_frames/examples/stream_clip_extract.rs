@@ -9,9 +9,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use video_frames::{
-    extract_clip_frames, ClipRange, ExtractMethod, ExtractOptions, FrameStrategy,
-};
+use video_frames::{extract_clip_frames, ClipRange, ExtractMethod, ExtractOptions, FrameStrategy};
 
 fn find_ffmpeg() -> PathBuf {
     if let Ok(p) = env::var("FO_FFMPEG_BIN") {
@@ -38,14 +36,19 @@ fn find_ffmpeg() -> PathBuf {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("用法: stream_clip_extract <URL_或本地视频路径> [起始秒] [结束秒] [interval|scene]");
+        eprintln!(
+            "用法: stream_clip_extract <URL_或本地视频路径> [起始秒] [结束秒] [interval|scene]"
+        );
         eprintln!("示例: cargo run -p video_frames --example stream_clip_extract -- \"D:\\sample.mp4\" 5 15 interval");
         return;
     }
 
     let input_path = &args[1];
     let start_sec: f64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-    let end_sec: f64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(start_sec + 10.0);
+    let end_sec: f64 = args
+        .get(3)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(start_sec + 10.0);
     let strat_str = args.get(4).map(|s| s.as_str()).unwrap_or("interval");
 
     let ffmpeg_bin = find_ffmpeg();

@@ -6,7 +6,7 @@ pub struct PromptBuilder;
 impl PromptBuilder {
     /// 默认的专家视频分析 System Prompt。
     /// 严格约束模型输出单层 JSON 格式，包含 scene, main_subject, key_actions, summary 字段。
-        pub const DEFAULT_SYSTEM_PROMPT: &'static str =
+    pub const DEFAULT_SYSTEM_PROMPT: &'static str =
         "You are an expert video clip analyst for professional digital asset management. Analyze the sequence of keyframes. \
         Respond ONLY with a valid JSON object matching this schema: \
         {\"scene\": \"<concise scene noun, <= 8 words>\", \"main_subject\": \"<core subject noun, <= 6 words>\", \"tags\": [\"<atomic keyword 1>\", \"<atomic keyword 2>\", \"<atomic keyword 3>\"], \"key_actions\": [\"<action 1>\", \"<action 2>\"], \"summary\": \"<one-sentence natural narrative>\"}. \

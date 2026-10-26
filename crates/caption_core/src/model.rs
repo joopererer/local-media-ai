@@ -23,11 +23,16 @@ pub fn sanitize_tags(raw_tags: &[String]) -> Vec<String> {
     let delimiters = [',', '，', '、', ';', '；', '|', '/', '\\', '\n', '\r'];
     for item in raw_tags {
         for token in item.split(&delimiters[..]) {
-            let mut s = token.trim().trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+            let mut s = token
+                .trim()
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_string();
             if s.is_empty() {
                 continue;
             }
-            for prefix in &["一个", "一根", "一只", "一部", "手持", "手拿", "身穿", "在", "正在"] {
+            for prefix in &[
+                "一个", "一根", "一只", "一部", "手持", "手拿", "身穿", "在", "正在",
+            ] {
                 if s.starts_with(prefix) && s.chars().count() > prefix.chars().count() + 1 {
                     s = s[prefix.len()..].trim().to_string();
                     break;
@@ -68,16 +73,19 @@ impl ClipCaption {
 
             // 宽容解析：部分模型可能使用下划线或大小写不一的字段
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_slice) {
-                let scene = v.get("scene")
+                let scene = v
+                    .get("scene")
                     .and_then(|s| s.as_str())
                     .unwrap_or("unknown")
                     .to_string();
-                let main_subject = v.get("main_subject")
+                let main_subject = v
+                    .get("main_subject")
                     .or_else(|| v.get("subject"))
                     .and_then(|s| s.as_str())
                     .unwrap_or("unknown")
                     .to_string();
-                let raw_actions: Vec<String> = v.get("tags")
+                let raw_actions: Vec<String> = v
+                    .get("tags")
                     .or_else(|| v.get("key_actions"))
                     .or_else(|| v.get("actions"))
                     .and_then(|a| a.as_array())
@@ -88,7 +96,8 @@ impl ClipCaption {
                     })
                     .unwrap_or_default();
                 let key_actions = sanitize_tags(&raw_actions);
-                let summary = v.get("summary")
+                let summary = v
+                    .get("summary")
                     .or_else(|| v.get("description"))
                     .and_then(|s| s.as_str())
                     .unwrap_or(trimmed)

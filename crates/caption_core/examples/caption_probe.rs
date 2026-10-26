@@ -5,18 +5,15 @@
 //! cargo run -p caption_core --example caption_probe -- [FRAME_1.png] [FRAME_2.png] ...
 //! ```
 
+use caption_core::{ClipCaption, PromptBuilder};
 use std::env;
 use std::path::PathBuf;
-use caption_core::{ClipCaption, PromptBuilder};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     println!("=== 视频片段 VLM 叙事理解与结构化描述探针 ===");
 
-    let frames: Vec<PathBuf> = args[1..]
-        .iter()
-        .map(|s| PathBuf::from(s))
-        .collect();
+    let frames: Vec<PathBuf> = args[1..].iter().map(PathBuf::from).collect();
 
     println!("输入关键帧数量: {}", frames.len());
     for (i, p) in frames.iter().enumerate() {
@@ -25,7 +22,10 @@ fn main() {
 
     let frame_count = if frames.is_empty() { 3 } else { frames.len() };
     let user_prompt = PromptBuilder::build_user_prompt(frame_count, None);
-    println!("\n[1] 生成 System Prompt:\n{}", PromptBuilder::DEFAULT_SYSTEM_PROMPT);
+    println!(
+        "\n[1] 生成 System Prompt:\n{}",
+        PromptBuilder::DEFAULT_SYSTEM_PROMPT
+    );
     println!("\n[2] 生成 User Prompt:\n{}", user_prompt);
 
     // 模拟一段来自 Qwen2-VL-2B-Instruct 的典型实际响应（含 Markdown 围栏）
@@ -45,7 +45,10 @@ Here is the structured analysis of the video clip:
 ```
 "#;
 
-    println!("\n[3] 模拟 Qwen2-VL 输出原始文本:\n{}", sample_vlm_output.trim());
+    println!(
+        "\n[3] 模拟 Qwen2-VL 输出原始文本:\n{}",
+        sample_vlm_output.trim()
+    );
 
     // 解析结构化结果
     let caption = ClipCaption::parse_robust(sample_vlm_output);

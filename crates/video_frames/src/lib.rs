@@ -351,7 +351,8 @@ pub fn extract_frames_with(
         let (f, u, d) = extract_by_seek(ffmpeg_bin, video, out_dir, options, &targets, runner)?;
         (f, u, 0, d)
     } else {
-        let (f, u, t) = extract_by_filter(ffmpeg_bin, video, out_dir, strategy, &plan, options, runner)?;
+        let (f, u, t) =
+            extract_by_filter(ffmpeg_bin, video, out_dir, strategy, &plan, options, runner)?;
         (f, u, t, 0)
     };
 
@@ -653,6 +654,7 @@ pub fn resolve_method(
 /// - 同时限制目标数 ≤ `ceil(duration/every_ms)`（ffmpeg fps filter 实际能产出的帧数），
 ///   避免目标数远多于 ffmpeg 能产出的帧（短视频 + max_frames=24 时）；
 /// - 时长未知 ⇒ 空（调用方回退帧率过滤）。
+///
 /// 计算指定片段区间内的目标时刻列表。
 pub fn target_times_for_range(range: &ClipRange, plan: &SamplingPlan) -> Vec<u64> {
     let d = range.duration_ms();
@@ -681,7 +683,10 @@ pub fn target_times_for_range(range: &ClipRange, plan: &SamplingPlan) -> Vec<u64
     if offsets.is_empty() {
         vec![range.start_ms.saturating_add(d / 2)]
     } else {
-        offsets.into_iter().map(|off| range.start_ms.saturating_add(off)).collect()
+        offsets
+            .into_iter()
+            .map(|off| range.start_ms.saturating_add(off))
+            .collect()
     }
 }
 
@@ -874,7 +879,9 @@ fn build_args(
                 if plan.single_at_ms.is_none() {
                     range.start_ms.saturating_add(plan.every_ms / 2)
                 } else {
-                    range.start_ms.saturating_add(plan.single_at_ms.unwrap_or(0))
+                    range
+                        .start_ms
+                        .saturating_add(plan.single_at_ms.unwrap_or(0))
                 }
             }
         };
@@ -912,9 +919,7 @@ fn build_args(
 
     let chain = match strategy {
         FrameStrategy::Scene { threshold } => {
-            format!(
-                r"select='isnan(prev_selected_t)+gt(scene\,{threshold:.3})',{scale},showinfo"
-            )
+            format!(r"select='isnan(prev_selected_t)+gt(scene\,{threshold:.3})',{scale},showinfo")
         }
         FrameStrategy::Interval { .. } => {
             if plan.single_at_ms.is_some() {
@@ -1832,7 +1837,6 @@ mod tests {
             runner.last_args().join(" ")
         );
     }
-
 
     #[test]
     fn clip_range_targets_fall_strictly_within_range() {

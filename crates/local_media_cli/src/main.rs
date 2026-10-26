@@ -7,9 +7,9 @@
 //! - embed-frames: Batch image / frame embedding
 //! - caption: VLM video clip narration and structured extraction
 
-use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "local-media-ai")]
@@ -285,21 +285,35 @@ fn main() {
                 ..video_frames::ExtractOptions::default()
             };
 
-            match video_frames::extract_clip_frames(&ff, Path::new(&video), range, strat, &out_dir, &opts) {
+            match video_frames::extract_clip_frames(
+                &ff,
+                Path::new(&video),
+                range,
+                strat,
+                &out_dir,
+                &opts,
+            ) {
                 Ok(outcome) => {
-                    let frames = outcome.frames.into_iter().map(|f| {
-                        let size_bytes = std::fs::metadata(&f.image_path).map(|m| m.len()).unwrap_or(0);
-                        ExtractedFrameInfo {
-                            t_ms: f.t_ms,
-                            path: f.image_path.display().to_string(),
-                            size_bytes,
-                        }
-                    }).collect();
+                    let frames = outcome
+                        .frames
+                        .into_iter()
+                        .map(|f| {
+                            let size_bytes = std::fs::metadata(&f.image_path)
+                                .map(|m| m.len())
+                                .unwrap_or(0);
+                            ExtractedFrameInfo {
+                                t_ms: f.t_ms,
+                                path: f.image_path.display().to_string(),
+                                size_bytes,
+                            }
+                        })
+                        .collect();
                     OutputEnvelope::success(ExtractClipResult {
                         method: format!("{:?}", outcome.method),
                         frames,
                         duration_ms: outcome.duration_ms,
-                    }).print();
+                    })
+                    .print();
                 }
                 Err(e) => {
                     OutputEnvelope::<ExtractClipResult>::failure(e.to_string()).print();
@@ -317,7 +331,8 @@ fn main() {
         } => {
             if let Some(p) = ort_lib {
                 if let Err(e) = embed_core::init_ort(&p) {
-                    OutputEnvelope::<EmbedTextResult>::failure(format!("初始化 ORT 失败: {e}")).print();
+                    OutputEnvelope::<EmbedTextResult>::failure(format!("初始化 ORT 失败: {e}"))
+                        .print();
                     std::process::exit(1);
                 }
             }
@@ -327,7 +342,8 @@ fn main() {
                         OutputEnvelope::success(EmbedTextResult {
                             dimensions: vec.len(),
                             vector: vec,
-                        }).print();
+                        })
+                        .print();
                     }
                     Err(e) => {
                         OutputEnvelope::<EmbedTextResult>::failure(e.to_string()).print();
@@ -350,14 +366,18 @@ fn main() {
         } => {
             if let Some(p) = ort_lib {
                 if let Err(e) = embed_core::init_ort(&p) {
-                    OutputEnvelope::<EmbedFramesResult>::failure(format!("初始化 ORT 失败: {e}")).print();
+                    OutputEnvelope::<EmbedFramesResult>::failure(format!("初始化 ORT 失败: {e}"))
+                        .print();
                     std::process::exit(1);
                 }
             }
             let input_frames: Vec<InputFrame> = match serde_json::from_str(&frames_json) {
                 Ok(f) => f,
                 Err(e) => {
-                    OutputEnvelope::<EmbedFramesResult>::failure(format!("解析 frames_json 失败: {e}")).print();
+                    OutputEnvelope::<EmbedFramesResult>::failure(format!(
+                        "解析 frames_json 失败: {e}"
+                    ))
+                    .print();
                     std::process::exit(1);
                 }
             };
@@ -371,11 +391,17 @@ fn main() {
                                 embeddings.push(FrameVectorInfo {
                                     t_ms: f.t_ms,
                                     vector: res.vector,
-                                    elapsed_secs: res.prep_secs + res.vision_secs + res.backbone_secs,
+                                    elapsed_secs: res.prep_secs
+                                        + res.vision_secs
+                                        + res.backbone_secs,
                                 });
                             }
                             Err(e) => {
-                                OutputEnvelope::<EmbedFramesResult>::failure(format!("帧 {} 嵌入失败: {e}", f.path)).print();
+                                OutputEnvelope::<EmbedFramesResult>::failure(format!(
+                                    "帧 {} 嵌入失败: {e}",
+                                    f.path
+                                ))
+                                .print();
                                 std::process::exit(1);
                             }
                         }
@@ -394,8 +420,13 @@ fn main() {
             instruction,
             mock_response,
         } => {
-            let paths: Vec<&str> = frames.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-            let prompt = caption_core::PromptBuilder::build_user_prompt(paths.len(), instruction.as_deref());
+            let paths: Vec<&str> = frames
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let _prompt =
+                caption_core::PromptBuilder::build_user_prompt(paths.len(), instruction.as_deref());
 
             let raw = match mock_response {
                 Some(m) => m,
@@ -415,7 +446,8 @@ fn main() {
                 key_actions: parsed.key_actions,
                 summary: parsed.summary,
                 search_document,
-            }).print();
+            })
+            .print();
         }
     }
 }
