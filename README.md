@@ -31,8 +31,10 @@ sha256 checksums.
 | [`embed_core`](crates/embed_core) | EmbeddingGemma 2 inference (text + image → 768-d L2-normalised vector), image preprocessing, and the stdio frame protocol shared with the worker |
 | [`embed_router`](crates/embed_router) | Backend selection (in-process ORT vs. llama.cpp worker) and worker process supervision: handshake, timeouts, crash backoff, circuit breaker, log rotation |
 | [`ocr_core`](crates/ocr_core) | Image → text + line boxes, engine-replaceable (PP-OCRv5 ONNX) |
-| [`video_frames`](crates/video_frames) | Video keyframe extraction via an external `ffmpeg` |
+| [`video_frames`](crates/video_frames) | Video keyframe extraction via an external `ffmpeg` (interval & scene change detection) |
+| [`caption_core`](crates/caption_core) | Vision-Language Model (Qwen2-VL) structured clip understanding, prompt templating, robust JSON parsing & atomic tags |
 | [`llama_worker`](crates/llama_worker) | The `llama-embed-worker` binary: a llama.cpp embedding server speaking the stdio frame protocol |
+| [`local_media_cli`](crates/local_media_cli) | Unified `local-media-ai` CLI sidecar for external applications (`extract-frames`, `embed`, `caption`, `search-doc`) |
 
 ## Using it from another project
 
@@ -40,16 +42,16 @@ Pin to a tag (Cargo matches tags exactly — they never move):
 
 ```toml
 [dependencies]
-embed_core   = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.1.0" }
-embed_router = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.1.0" }
-ocr_core     = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.1.0" }
-video_frames = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.1.0" }
+embed_core   = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.2.0" }
+embed_router = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.2.0" }
+ocr_core     = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.2.0" }
+video_frames = { git = "https://github.com/joopererer/local-media-ai.git", tag = "v0.2.0" }
 ```
 
 Build the worker binary from a checkout of the same tag:
 
 ```bash
-git clone --branch v0.1.0 --depth 1 https://github.com/joopererer/local-media-ai.git
+git clone --branch v0.2.0 --depth 1 https://github.com/joopererer/local-media-ai.git
 cargo build --release --manifest-path local-media-ai/Cargo.toml -p llama_worker
 # -> local-media-ai/target/release/llama-embed-worker
 ```
@@ -62,6 +64,9 @@ cargo build --release --manifest-path local-media-ai/Cargo.toml -p llama_worker
 
 # EmbeddingGemma 2 (ONNX export, quantized)
 ./scripts/fetch_embedding_models.ps1 -OutDir ./runtime/models
+
+# Qwen2-VL-2B (GGUF + mmproj for VLM clip understanding)
+./scripts/fetch_qwen2vl_models.ps1 -OutDir ./runtime/models/qwen2-vl
 
 # llama.cpp runtime + import libraries (only needed for the llama.cpp backend)
 ./scripts/fetch_llama_runtime.ps1 -OutDir ./runtime/llama
